@@ -20,12 +20,14 @@ python3 -m http.server 8099
 
 或双击 `start.command`。
 
-## 启用 GitHub Pages
+## 启用 GitHub Pages（必做，否则 404）
 
-1. 打开仓库 **Settings → Pages**
-2. **Build and deployment → Source** 选 **Deploy from a branch**
+1. 打开 **https://github.com/kaiwei588/gun-race/settings/pages**
+2. **Source** 选 **Deploy from a branch**
 3. **Branch** 选 `main`，文件夹选 **/ (root)**
-4. 保存，约 1–2 分钟后生效
+4. 点 **Save**，等 2–5 分钟
+
+详细图文说明见 [开启Pages教程.md](./开启Pages教程.md)
 
 ## 文件说明
 
