@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>火线突围 - 3D 枪战</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-root">
+    <canvas id="game-canvas"></canvas>
+
+    <div id="hud" class="hidden">
+      <div id="hud-top">
+        <div class="stat-block">
+          <span class="stat-label">生命</span>
+          <div class="bar-wrap"><div id="hp-bar"></div></div>
+          <span id="hp-text">1500</span>
+          <span id="regen-hud" class="hidden"></span>
+        </div>
+        <div id="score-block">
+          <span id="layer-text">第 1 层</span>
+          <span id="wave-text">第 1 关</span>
+          <span id="kill-text">击杀 0</span>
+        </div>
+        <div class="stat-block ammo-block">
+          <span class="stat-label">状态</span>
+          <span id="ammo-text">左键激活隐形</span>
+        </div>
+      </div>
+
+      <div id="crosshair">
+        <div class="ch-line ch-top"></div>
+        <div class="ch-line ch-bottom"></div>
+        <div class="ch-line ch-left"></div>
+        <div class="ch-line ch-right"></div>
+        <div class="ch-dot"></div>
+      </div>
+
+      <div id="hit-marker" class="hidden">✕</div>
+      <div id="damage-flash"></div>
+      <div id="wave-banner" class="hidden"></div>
+
+      <div id="weapon-hud">隐形 · <kbd>左键</kbd> 激活 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 切换</div>
+      <div id="weapon-slots">
+        <div id="weapon-slot-1" class="weapon-slot active">
+          <span class="slot-key">1</span>
+          <span class="slot-name">隐形</span>
+          <span class="slot-ammo">就绪</span>
+        </div>
+        <div id="weapon-slot-2" class="weapon-slot">
+          <span class="slot-key">2</span>
+          <span class="slot-name">狙击枪</span>
+          <span class="slot-ammo">∞</span>
+        </div>
+        <div id="weapon-slot-3" class="weapon-slot">
+          <span class="slot-key">3</span>
+          <span class="slot-name">电锤</span>
+          <span class="slot-ammo">∞</span>
+        </div>
+        <div id="weapon-slot-4" class="weapon-slot">
+          <span class="slot-key">4</span>
+          <span class="slot-name">太刀</span>
+          <span class="slot-ammo">∞</span>
+        </div>
+        <div id="weapon-slot-5" class="weapon-slot">
+          <span class="slot-key">5</span>
+          <span class="slot-name">岩浆枪</span>
+          <span class="slot-ammo">∞</span>
+        </div>
+      </div>
+      <div id="equipment-hud" class="hidden"></div>
+      <div id="sanctuary-hud" class="hidden"></div>
+      <div id="team-hud"></div>
+      <div id="flight-hud" class="hidden">Q 起飞 10 秒</div>
+      <div id="boost-hud" class="hidden">Ctrl 极速冲刺</div>
+      <div id="hint">点击画面锁定鼠标 · <kbd>X</kbd> 瞄准 · <kbd>E</kbd> 召回队友 · <kbd>ESC</kbd> 解锁</div>
+    </div>
+
+    <div id="start-screen">
+      <div class="panel">
+        <h1>火线突围</h1>
+        <p class="subtitle">3D 第一人称枪战 · 无尽关卡 · 每 15 关终极挑战 + 随机装备</p>
+        <ul class="feature-list">
+          <li><kbd>W A S D</kbd> 移动</li>
+          <li><kbd>鼠标</kbd> 瞄准视角 · 按住 <kbd>X</kbd> 精确瞄准</li>
+          <li><kbd>左键</kbd> 使用能力 / 攻击</li>
+          <li><kbd>Shift</kbd> 冲刺 · <kbd>Ctrl</kbd> 极速冲刺 10 秒（冷却 20 秒）</li>
+          <li><kbd>Q</kbd> 起飞 10 秒 · 飞行中 <kbd>Space</kbd> 上升 · <kbd>Shift</kbd> 下降</li>
+          <li><kbd>Space</kbd> 跳上方块</li>
+          <li><kbd>4</kbd> 太刀 · 每过 5 关觉醒属性升级（烈焰/寒冰/雷霆…）</li>
+          <li><kbd>1</kbd> 隐形 · <kbd>2</kbd> 狙击枪 · <kbd>3</kbd> 电锤 · <kbd>5</kbd> 岩浆枪</li>
+          <li>绿色复血庇护所：快速回血 · 敌人无法攻击</li>
+          <li>3 秒未受伤后自动回血 100/秒 · 击杀也回血</li>
+          <li>2 名队友协同：阿尔法突击 · 布拉沃支援回血 · <kbd>E</kbd> 召回队友</li>
+          <li>小队倒地机制：还有队友存活时，3 秒后自动复活（55% 血量）</li>
+          <li>队友低血量会撤退 · 庇护所内可加速复活倒地队友</li>
+          <li>无尽关卡 · 难度逐关递增 · 每 15 关终极 Boss 战 + 随机装备</li>
+          <li>战场共 3 层 · 两侧楼梯上下</li>
+        </ul>
+        <button id="start-btn">开始战斗</button>
+      </div>
+    </div>
+
+    <div id="gameover-screen" class="hidden">
+      <div class="panel">
+        <h2 id="end-title">任务失败</h2>
+        <p id="end-msg">你被敌人击倒了</p>
+        <p id="end-stats">击杀 0 · 存活 0 秒</p>
+        <button id="restart-btn">再来一局</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

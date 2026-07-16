@@ -12,5 +12,5 @@ echo "  地址: http://localhost:$PORT"
 echo "  按 Ctrl+C 停止服务器"
 echo "================================"
 
-open "http://localhost:$PORT/%E6%9E%AA%E6%88%98.html"
+open "http://localhost:$PORT/"
 python3 -m http.server "$PORT"

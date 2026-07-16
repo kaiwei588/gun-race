@@ -13,7 +13,7 @@ echo "  按 Ctrl+C 停止服务器"
 echo "================================"
 
 if command -v open >/dev/null 2>&1; then
-  open "http://localhost:$PORT/%E6%9E%AA%E6%88%98.html"
+  open "http://localhost:$PORT/"
 fi
 
 python3 -m http.server "$PORT"
