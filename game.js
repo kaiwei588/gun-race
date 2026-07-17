@@ -38,7 +38,6 @@ const FLIGHT_MAX_HEIGHT = LAYER_Y[2] + WALL_HEIGHT + 6;
 const PLAYER_EYE_OFFSET = 1.7;
 const CAMERA_FOV = 75;
 const AIM_FOV = 42;
-const SNIPER_AIM_FOV = 28;
 const MOUSE_SENS = 0.002;
 const AIM_MOUSE_SENS = 0.0011;
 const AIM_MOVE_MULT = 0.55;
@@ -54,6 +53,7 @@ const TEAMMATE_DAMAGE = 48 * TEAMMATE_POWER_MULT;
 const TEAMMATE_SHOOT_COOLDOWN = 210 / TEAMMATE_POWER_MULT;
 const TEAMMATE_BULLET_SPEED = 116 * TEAMMATE_POWER_MULT;
 const TEAMMATE_REGEN_RATE = 500;
+const ALLY_BOOST_MULT = 2;
 const TEAMMATE_NAMES = ['阿尔法', '布拉沃'];
 const TEAMMATE_PROFILES = [
   { role: '突击', color: '#5dade2', speedMult: 1.12, damageMult: 1.2, range: 46, keepDist: 5.5, spread: 0.007, healAura: 0 },
@@ -116,21 +116,15 @@ const WEAPONS = {
     cooldown: 12000,
     fireRate: 400,
   },
-  sniper: {
-    id: 'sniper',
-    name: '狙击枪',
+  allyboost: {
+    id: 'allyboost',
+    name: '队友强化',
     slot: 2,
-    sniper: true,
-    infinite: true,
-    magSize: 0,
-    reserve: 0,
-    reloadTime: 0,
-    fireRate: 1400,
-    damage: 2000,
-    headshotMult: 3.5,
-    spread: 0.001,
-    pellets: 1,
-    recoilZ: 0.15,
+    ability: true,
+    abilityLabel: '强化',
+    duration: 12000,
+    cooldown: 18000,
+    fireRate: 600,
   },
   hammer: {
     id: 'hammer',
@@ -185,7 +179,7 @@ const WEAPONS = {
   },
 };
 
-const WEAPON_ORDER = ['stealth', 'sniper', 'hammer', 'katana', 'magma'];
+const WEAPON_ORDER = ['stealth', 'allyboost', 'hammer', 'katana', 'magma'];
 
 const EQUIPMENT = {
   medkit: { id: 'medkit', name: '战术医疗包', desc: '最大生命 +250', maxHp: 250 },
@@ -281,6 +275,9 @@ const state = {
   stealthActive: false,
   stealthTimer: 0,
   stealthCooldown: 0,
+  allyBoostActive: false,
+  allyBoostTimer: 0,
+  allyBoostCooldown: 0,
   sanctuaryStay: 0,
   playerDown: false,
   playerReviveTimer: 0,
@@ -659,6 +656,10 @@ function updateSanctuary(dt) {
   }
 
   if (healed) updateHUD();
+}
+
+function getTeammateBoostMult() {
+  return state.allyBoostActive ? ALLY_BOOST_MULT : 1;
 }
 
 function getKatanaElement(tier = state.katanaTier) {
@@ -1040,52 +1041,39 @@ function createWeaponMesh(id) {
     gun.userData.muzzle = new THREE.Vector3(0.2, -0.12, -0.35);
     gun.userData.flashSize = 0;
     gun.position.set(0.22, -0.16, -0.35);
-  } else if (id === 'sniper') {
-    const scopeMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a3728, roughness: 0.85 });
+  } else if (id === 'allyboost') {
+    const boostMat = new THREE.MeshStandardMaterial({
+      color: 0x58d68d, metalness: 0.7, roughness: 0.25,
+      emissive: 0x27ae60, emissiveIntensity: 0.55,
+    });
+    const coreMat = new THREE.MeshStandardMaterial({
+      color: 0xa8ffcc, emissive: 0x2ecc71, emissiveIntensity: 0.85,
+      metalness: 0.4, roughness: 0.2,
+    });
 
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.1, 0.52), woodMat);
-    body.position.set(0.2, -0.14, -0.34);
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.04, 0.14), bodyMat);
+    pad.position.set(0.2, -0.2, -0.28);
+    gun.add(pad);
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.2), boostMat);
+    body.position.set(0.2, -0.14, -0.38);
     gun.add(body);
 
-    const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.11, 0.28), bodyMat);
-    receiver.position.set(0.2, -0.12, -0.18);
-    gun.add(receiver);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), coreMat);
+    core.position.set(0.2, -0.1, -0.38);
+    gun.add(core);
 
-    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.72), accentMat);
-    barrel.position.set(0.2, -0.1, -0.78);
-    gun.add(barrel);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 8, 20), boostMat);
+    ring.position.set(0.2, -0.1, -0.38);
+    gun.add(ring);
 
-    const muzzleBrake = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.04, 0.08, 8), scopeMat);
-    muzzleBrake.rotation.x = Math.PI / 2;
-    muzzleBrake.position.set(0.2, -0.1, -1.14);
-    gun.add(muzzleBrake);
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.12, 6), accentMat);
+    antenna.position.set(0.2, -0.02, -0.38);
+    gun.add(antenna);
 
-    const scopeBody = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.22, 10), scopeMat);
-    scopeBody.rotation.z = Math.PI / 2;
-    scopeBody.position.set(0.2, -0.02, -0.34);
-    gun.add(scopeBody);
-
-    const scopeLens = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.028, 0.028, 0.04, 10),
-      new THREE.MeshStandardMaterial({ color: 0x224466, metalness: 0.9, roughness: 0.1, emissive: 0x112233, emissiveIntensity: 0.3 })
-    );
-    scopeLens.rotation.z = Math.PI / 2;
-    scopeLens.position.set(0.2, -0.02, -0.46);
-    gun.add(scopeLens);
-
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.07), bodyMat);
-    grip.position.set(0.2, -0.28, -0.1);
-    gun.add(grip);
-
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.08, 0.22), woodMat);
-    stock.position.set(0.2, -0.12, 0.08);
-    gun.add(stock);
-
-    gun.userData.muzzle = new THREE.Vector3(0.2, -0.1, -1.18);
-    gun.userData.flashSize = 0.1;
-    gun.position.set(0.24, -0.2, -0.42);
-    gun.rotation.x = 0.12;
+    gun.userData.muzzle = new THREE.Vector3(0.2, -0.02, -0.38);
+    gun.userData.flashSize = 0;
+    gun.position.set(0.22, -0.16, -0.35);
   } else if (id === 'hammer') {
     const motorMat = new THREE.MeshStandardMaterial({ color: 0xf0b429, roughness: 0.55, metalness: 0.2 });
     const gripMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.92 });
@@ -2362,7 +2350,7 @@ function updateTeammates(dt) {
     if (!t.alive || !t.group) continue;
 
     if (t.hp < t.maxHp) {
-      t.hp = Math.min(t.maxHp, t.hp + TEAMMATE_REGEN_RATE * (dt / 1000));
+      t.hp = Math.min(t.maxHp, t.hp + TEAMMATE_REGEN_RATE * getTeammateBoostMult() * (dt / 1000));
     }
 
     const tx = t.group.position.x;
@@ -2373,47 +2361,49 @@ function updateTeammates(dt) {
     const formation = getFormationOffset(t.index ?? 0, yaw);
     t.followOffset = formation;
 
+    const boostMult = getTeammateBoostMult();
+
     if (hpPct <= TEAMMATE_RETREAT_HP && !isInSanctuary(tx, tz, t.layer)) {
       t.status = '撤退';
       const sanctuary = getNearestSanctuary(tx, tz, t.layer) || getNearestSanctuary(px, pz, playerLayer);
       const retreatX = sanctuary ? sanctuary.x : px + formation.x;
       const retreatZ = sanctuary ? sanctuary.z : pz + formation.z;
-      moveTeammateToward(t, retreatX, retreatZ, t.speed * 1.15, dt);
+      moveTeammateToward(t, retreatX, retreatZ, t.speed * boostMult * 1.15, dt);
       t.group.lookAt(retreatX, aimY, retreatZ);
     } else if (t.layer !== playerLayer) {
       t.status = '集结';
       const ramp = getRampTarget(t.layer, playerLayer, tx, tz);
       const destX = ramp ? ramp.x : px + formation.x;
       const destZ = ramp ? ramp.z : pz + formation.z;
-      moveTeammateToward(t, destX, destZ, t.speed * 1.05, dt);
+      moveTeammateToward(t, destX, destZ, t.speed * boostMult * 1.05, dt);
       t.group.lookAt(destX, aimY, destZ);
     } else {
-      const target = findNearestEnemyForAlly(t);
+      const target = findNearestEnemyForAlly(t, (t.range ?? 40) * boostMult);
       let moved = false;
 
       if (target) {
-        t.status = '交战';
+        t.status = state.allyBoostActive ? '强化交战' : '交战';
         const keepDist = t.keepDist ?? 7;
         if (target.dist > keepDist + 1.5) {
-          moved = moveTeammateToward(t, target.x, target.z, t.speed, dt);
+          moved = moveTeammateToward(t, target.x, target.z, t.speed * boostMult, dt);
         } else if (target.dist < keepDist - 1.5) {
           const awayX = tx + (tx - target.x);
           const awayZ = tz + (tz - target.z);
-          moved = moveTeammateToward(t, awayX, awayZ, t.speed * 0.75, dt);
+          moved = moveTeammateToward(t, awayX, awayZ, t.speed * boostMult * 0.75, dt);
         }
         t.group.lookAt(target.x, target.y, target.z);
       } else {
-        t.status = '跟随';
+        t.status = state.allyBoostActive ? '强化跟随' : '跟随';
         const formX = px + formation.x;
         const formZ = pz + formation.z;
         if (Math.hypot(formX - tx, formZ - tz) > 2) {
-          moved = moveTeammateToward(t, formX, formZ, t.speed * 0.8, dt);
+          moved = moveTeammateToward(t, formX, formZ, t.speed * boostMult * 0.8, dt);
         }
         t.group.lookAt(px, LAYER_Y[playerLayer] + t.aimHeight, pz);
       }
 
       if (t.profile?.healAura && Math.hypot(tx - px, tz - pz) < 8 && t.hp > 0) {
-        state.hp = Math.min(getMaxHp(), state.hp + t.profile.healAura * (dt / 1000));
+        state.hp = Math.min(getMaxHp(), state.hp + t.profile.healAura * boostMult * (dt / 1000));
       }
 
       const stepDist = Math.hypot(t.group.position.x - t.prevX, t.group.position.z - t.prevZ);
@@ -2440,10 +2430,10 @@ function updateTeammates(dt) {
 
       t.shootTimer -= dt;
       if (target && t.shootTimer <= 0 && target.dist < (t.range ?? 40)) {
-        t.shootTimer = t.shootCooldown + Math.random() * 160;
+        t.shootTimer = t.shootCooldown / boostMult + Math.random() * 160;
         t.gunRecoil = 1;
         t.muzzleFlash = 80;
-        const spread = t.spread ?? 0.012;
+        const spread = (t.spread ?? 0.012) / boostMult;
         const dir = new THREE.Vector3(
           target.x - tx + (Math.random() - 0.5) * spread,
           target.y - aimY + (Math.random() - 0.5) * spread,
@@ -2453,18 +2443,23 @@ function updateTeammates(dt) {
           tx + dir.x * 0.5,
           aimY + dir.y * 0.1,
           tz + dir.z * 0.5,
-          dir.x * TEAMMATE_BULLET_SPEED,
-          dir.y * TEAMMATE_BULLET_SPEED,
-          dir.z * TEAMMATE_BULLET_SPEED,
-          t.damage,
+          dir.x * TEAMMATE_BULLET_SPEED * boostMult,
+          dir.y * TEAMMATE_BULLET_SPEED * boostMult,
+          dir.z * TEAMMATE_BULLET_SPEED * boostMult,
+          t.damage * boostMult,
           t
         );
       }
     }
 
     const hitFlash = now - t.lastHit < 140;
-    t.bodyMat.emissive.setHex(hitFlash ? 0x3388ff : 0x000000);
-    t.bodyMat.emissiveIntensity = hitFlash ? 0.4 : 0;
+    if (state.allyBoostActive) {
+      t.bodyMat.emissive.setHex(hitFlash ? 0x66ffaa : 0x1a6640);
+      t.bodyMat.emissiveIntensity = hitFlash ? 0.55 : 0.35 + Math.sin(now * 0.008) * 0.15;
+    } else {
+      t.bodyMat.emissive.setHex(hitFlash ? 0x3388ff : 0x000000);
+      t.bodyMat.emissiveIntensity = hitFlash ? 0.4 : 0;
+    }
 
     if (t.nameSprite) {
       t.nameSprite.lookAt(camera.position);
@@ -2926,6 +2921,11 @@ function getAbilitySlotText(id) {
     if (state.stealthCooldown > 0) return `${(state.stealthCooldown / 1000).toFixed(1)}s`;
     return '就绪';
   }
+  if (id === 'allyboost') {
+    if (state.allyBoostActive) return `${(state.allyBoostTimer / 1000).toFixed(1)}s`;
+    if (state.allyBoostCooldown > 0) return `${(state.allyBoostCooldown / 1000).toFixed(1)}s`;
+    return '就绪';
+  }
   return '';
 }
 
@@ -2934,6 +2934,11 @@ function getAbilityStatusText(weapon) {
     if (state.stealthActive) return `隐形中 ${(state.stealthTimer / 1000).toFixed(1)}s`;
     if (state.stealthCooldown > 0) return `冷却 ${(state.stealthCooldown / 1000).toFixed(1)}s`;
     return '左键激活隐形';
+  }
+  if (weapon.id === 'allyboost') {
+    if (state.allyBoostActive) return `强化中 ×${ALLY_BOOST_MULT} · ${(state.allyBoostTimer / 1000).toFixed(1)}s`;
+    if (state.allyBoostCooldown > 0) return `冷却 ${(state.allyBoostCooldown / 1000).toFixed(1)}s`;
+    return `左键强化队友 ×${ALLY_BOOST_MULT} · 12 秒`;
   }
   return '';
 }
@@ -2958,6 +2963,28 @@ function clearEnemyBullets() {
   enemyBullets.length = 0;
 }
 
+function activateAllyBoost() {
+  const weapon = WEAPONS.allyboost;
+  const now = performance.now();
+  if (state.allyBoostActive || state.allyBoostCooldown > 0 || now - state.lastShot < weapon.fireRate) return;
+
+  state.allyBoostActive = true;
+  state.allyBoostTimer = weapon.duration;
+  state.lastShot = now;
+
+  for (const t of teammates) {
+    if (!t.alive || !t.group) continue;
+    const tx = t.group.position.x;
+    const ty = LAYER_Y[t.layer] + t.aimHeight;
+    const tz = t.group.position.z;
+    spawnParticles(tx, ty, tz, 0x2ecc71, 16);
+    spawnParticles(tx, ty + 0.3, tz, 0x58d68d, 10);
+  }
+  spawnParticles(camera.position.x, camera.position.y - 0.4, camera.position.z, 0x2ecc71, 14);
+  showWaveBanner(`队友强化！全员 ×${ALLY_BOOST_MULT} 战斗能力 · 12 秒`, 2200);
+  updateHUD();
+}
+
 function activateStealth() {
   const weapon = WEAPONS.stealth;
   const now = performance.now();
@@ -2974,6 +3001,7 @@ function activateStealth() {
 
 function useAbility(weapon) {
   if (weapon.id === 'stealth') activateStealth();
+  if (weapon.id === 'allyboost') activateAllyBoost();
 }
 
 function updateAbilities(dt) {
@@ -2991,7 +3019,21 @@ function updateAbilities(dt) {
     if (state.stealthCooldown === 0) updateHUD();
   }
 
-  if (state.stealthActive) updateHUD();
+  if (state.allyBoostActive) {
+    state.allyBoostTimer -= dt;
+    if (state.allyBoostTimer <= 0) {
+      state.allyBoostActive = false;
+      state.allyBoostTimer = 0;
+      state.allyBoostCooldown = WEAPONS.allyboost.cooldown;
+      showWaveBanner('队友强化结束', 1200);
+      updateHUD();
+    }
+  } else if (state.allyBoostCooldown > 0) {
+    state.allyBoostCooldown = Math.max(0, state.allyBoostCooldown - dt);
+    if (state.allyBoostCooldown === 0) updateHUD();
+  }
+
+  if (state.stealthActive || state.allyBoostActive) updateHUD();
 }
 
 function shoot() {
@@ -3045,8 +3087,8 @@ function fireGun() {
     .filter(c => c.layer < 0 || c.layer === state.currentLayer)
     .map(c => c.mesh);
 
-  const hitColor = weapon.id === 'magma' ? 0xff5500 : weapon.sniper ? 0xffdd88 : 0xff4444;
-  const wallColor = weapon.id === 'magma' ? 0xff8800 : weapon.sniper ? 0xccccaa : 0xffcc66;
+  const hitColor = weapon.id === 'magma' ? 0xff5500 : 0xff4444;
+  const wallColor = weapon.id === 'magma' ? 0xff8800 : 0xffcc66;
   const spreadMult = isAiming() ? AIM_SPREAD_MULT : 1;
   let hitEnemy = false;
 
@@ -3063,11 +3105,9 @@ function fireGun() {
         const dmg = getWeaponDamage(weapon, isHead);
         enemy.hp -= dmg;
         enemy.lastHit = now;
-        spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, hitColor, weapon.sniper ? 10 : weapon.id === 'magma' ? 14 : 6);
+        spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, hitColor, weapon.id === 'magma' ? 14 : 6);
         if (weapon.id === 'magma') {
           spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, 0xffee00, 8);
-        } else if (weapon.sniper && isHead) {
-          spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, 0xffd700, 12);
         }
         hitEnemy = true;
         if (enemy.hp <= 0) killEnemy(enemy);
@@ -3269,9 +3309,7 @@ function updateAim(dt) {
   const target = isAiming() ? 1 : 0;
   aimBlend += (target - aimBlend) * Math.min(1, dt / 90);
 
-  const targetFov = isAiming()
-    ? (getCurrentWeapon()?.sniper ? SNIPER_AIM_FOV : AIM_FOV)
-    : CAMERA_FOV;
+  const targetFov = isAiming() ? AIM_FOV : CAMERA_FOV;
   const fov = CAMERA_FOV + (targetFov - CAMERA_FOV) * aimBlend;
   if (Math.abs(camera.fov - fov) > 0.05) {
     camera.fov = fov;
@@ -3439,8 +3477,9 @@ function updateTeamHUD() {
     const pct = Math.max(0, t.hp / t.maxHp);
     const cls = pct > 0.5 ? 'ok' : pct > 0.25 ? 'warn' : 'crit';
     const status = t.status || '跟随';
+    const boostTag = state.allyBoostActive ? ' · ×2' : '';
     const kills = t.kills ? ` · ${t.kills}杀` : '';
-    return `<span class="team-chip ${cls}">${t.name} · ${status} · ${Math.ceil(t.hp)} HP${kills}</span>`;
+    return `<span class="team-chip ${cls}${state.allyBoostActive ? ' boosted' : ''}">${t.name} · ${status}${boostTag} · ${Math.ceil(t.hp)} HP${kills}</span>`;
   }).join('');
 }
 
@@ -3567,6 +3606,9 @@ function startGame() {
   state.stealthActive = false;
   state.stealthTimer = 0;
   state.stealthCooldown = 0;
+  state.allyBoostActive = false;
+  state.allyBoostTimer = 0;
+  state.allyBoostCooldown = 0;
   state.sanctuaryStay = 0;
   state.playerDown = false;
   state.playerReviveTimer = 0;
