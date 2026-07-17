@@ -67,8 +67,10 @@ const BOSS_HUES = [0.0, 0.06, 0.58];
 const BOSS_POWER_MULT = 2;
 const WEAPON_SWITCH_COOLDOWN = 300;
 const CYCLE_LENGTH = 15;
-const BASE_MINIONS_PER_WAVE = 120;
-const BASE_MINIONS_TO_BOSS = 120;
+const WAVE_MINIONS = 80;
+const MAX_PARTICLES = 100;
+const LOS_CHECK_INTERVAL = 4;
+const PIXEL_RATIO_CAP = 1.5;
 const MAGMA_SPLASH_RADIUS = 2.5 * 6;
 const GUN_RANGE_MULT = 20;
 const MAGMA_GUN_RANGE = ARENA_SIZE * 2 * GUN_RANGE_MULT;
@@ -139,7 +141,6 @@ const WEAPONS = {
     slot: 3,
     ability: true,
     abilityLabel: '召唤',
-    cooldown: 40000,
     fireRate: 900,
   },
   katana: {
@@ -271,6 +272,7 @@ const state = {
   mouseLocked: false,
   currentLayer: 0,
   waveMinionKills: 0,
+  waveMinionsSpawned: 0,
   bossSpawned: false,
   bossesAlive: 0,
   verticalVelocity: 0,
@@ -290,7 +292,6 @@ const state = {
   allyBoostActive: false,
   allyBoostTimer: 0,
   allyBoostCooldown: 0,
-  summonCooldown: 0,
   summonUsedThisWave: false,
   sanctuaryStay: 0,
   playerDown: false,
@@ -720,11 +721,15 @@ const mouse = { down: false };
 // ─── Three.js Setup ───────────────────────────────────────────────
 
 const canvas = document.getElementById('game-canvas');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: window.devicePixelRatio <= 1.5,
+  powerPreference: 'high-performance',
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, PIXEL_RATIO_CAP));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.setClearColor(0x1a1a2e);
 
 const scene = new THREE.Scene();
@@ -740,7 +745,7 @@ scene.add(ambient);
 const sun = new THREE.DirectionalLight(0xfff5e6, 1.0);
 sun.position.set(20, 40, 15);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.near = 1;
 sun.shadow.camera.far = 150;
 sun.shadow.camera.left = -50;
@@ -802,6 +807,9 @@ const enemies = [];
 const teammates = [];
 const summons = [];
 const particles = [];
+const _particleGeo = new THREE.SphereGeometry(0.1, 4, 4);
+const _particleMatCache = new Map();
+const _particlePool = [];
 const enemyBullets = [];
 const allyBullets = [];
 let weaponMesh = null;
@@ -810,9 +818,86 @@ let muzzleFlash = null;
 const _v3a = new THREE.Vector3();
 const _v3b = new THREE.Vector3();
 const _v3c = new THREE.Vector3();
+const _v2a = new THREE.Vector2();
 const sightBlockerCache = [];
 const wallMeshCache = [];
 const _barLookAt = new THREE.Vector3();
+
+let _waveConfigCache = null;
+let _animateFrame = 0;
+let _shootFrame = -1;
+let _shootLayer = -1;
+const _shootMeshes = [];
+const _shootMeshMap = new Map();
+
+const dom = {};
+function domEl(id) {
+  return dom[id] ?? (dom[id] = document.getElementById(id));
+}
+
+function resetWaveConfigCache() {
+  _waveConfigCache = null;
+}
+
+function invalidateShootTargets() {
+  _shootFrame = -1;
+}
+
+function hasAlivePhoenix() {
+  for (const s of summons) {
+    if (s.alive && s.isPhoenix) return true;
+  }
+  return false;
+}
+
+function syncUnitFloor(unit) {
+  const rampY = getFootYFromRamp(unit.group.position.x, unit.group.position.z);
+  if (rampY !== null) {
+    unit.group.position.y = rampY;
+    unit.layer = getLayerFromFootY(rampY);
+  } else {
+    unit.group.position.y = LAYER_Y[unit.layer];
+  }
+}
+
+function applySplashDamage(cx, cy, cz, directEnemy, baseDmg, now, owner, radius, particleCount = 18) {
+  const layer = owner?.layer ?? state.currentLayer;
+  let hitAny = false;
+
+  for (const e of enemies) {
+    if (!e.alive || e.layer !== layer || e === directEnemy) continue;
+    const ex = e.group.position.x;
+    const ey = getUnitAimY(e);
+    const ez = e.group.position.z;
+    const dist = Math.hypot(ex - cx, ey - cy, ez - cz);
+    const hitR = radius + (e.isBoss ? 1.2 : 0.85);
+    if (dist > hitR) continue;
+    const falloff = 1 - (dist / radius) * 0.48;
+    damageEnemy(e, baseDmg * Math.max(0.4, falloff), now, owner);
+    hitAny = true;
+  }
+
+  const burstBudget = Math.min(particleCount, MAX_PARTICLES - particles.length);
+  if (burstBudget > 0) {
+    spawnParticles(cx, cy, cz, 0xff5500, Math.ceil(burstBudget * 0.55));
+    spawnParticles(cx, cy, cz, 0xffee00, Math.floor(burstBudget * 0.45));
+  }
+  return hitAny;
+}
+
+function prepareShootTargets(layer) {
+  if (_shootFrame === _animateFrame && _shootLayer === layer) return;
+  _shootFrame = _animateFrame;
+  _shootLayer = layer;
+  _shootMeshes.length = 0;
+  _shootMeshMap.clear();
+  for (const e of enemies) {
+    if (!e.alive || e.layer !== layer) continue;
+    _shootMeshes.push(e.body, e.head);
+    _shootMeshMap.set(e.body, e);
+    _shootMeshMap.set(e.head, e);
+  }
+}
 
 function addCollider(mesh, w, h, d, layer = -1) {
   colliders.push({ mesh, w, h, d, layer });
@@ -1915,6 +2000,8 @@ function resolveMovement(pos, dx, dy, dz, layer = null) {
 // ─── Enemies ──────────────────────────────────────────────────────
 
 function getWaveConfig(wave) {
+  if (_waveConfigCache && _waveConfigCache.wave === wave) return _waveConfigCache.cfg;
+
   const tier = Math.max(0, wave - 1);
   const cycleIndex = Math.floor(tier / CYCLE_LENGTH);
   const posInCycle = tier % CYCLE_LENGTH;
@@ -1925,10 +2012,17 @@ function getWaveConfig(wave) {
   const finaleScale = isCycleFinale ? 2.5 + DIFFICULTY_MULT * 0.35 : 1;
   const intensity = linearScale * cycleScale * finaleScale;
 
-  const minionsPerWave = BASE_MINIONS_PER_WAVE;
-  const minionsToBoss = BASE_MINIONS_TO_BOSS;
-
-  return { tier, cycleIndex, posInCycle, isCycleFinale, intensity, minionsPerWave, minionsToBoss };
+  const cfg = {
+    tier,
+    cycleIndex,
+    posInCycle,
+    isCycleFinale,
+    intensity,
+    minionsPerWave: WAVE_MINIONS,
+    minionsToBoss: WAVE_MINIONS,
+  };
+  _waveConfigCache = { wave, cfg };
+  return cfg;
 }
 
 function getWaveBannerText(wave) {
@@ -1998,7 +2092,6 @@ function buildSoldierModel(isBoss, tier, isAlly = false) {
   function addLimb(parent, w, h, d, mat, y = -h / 2) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     mesh.position.y = y;
-    mesh.castShadow = true;
     parent.add(mesh);
     return mesh;
   }
@@ -2028,7 +2121,6 @@ function buildSoldierModel(isBoss, tier, isAlly = false) {
     uniformMat
   );
   torso.position.y = 1.12;
-  torso.castShadow = true;
   group.add(torso);
 
   const belt = new THREE.Mesh(
@@ -2043,7 +2135,6 @@ function buildSoldierModel(isBoss, tier, isAlly = false) {
     skinMat
   );
   head.position.y = 1.72;
-  head.castShadow = true;
   group.add(head);
 
   const helmet = new THREE.Mesh(
@@ -2051,7 +2142,6 @@ function buildSoldierModel(isBoss, tier, isAlly = false) {
     helmetMat
   );
   helmet.position.y = 1.78;
-  helmet.castShadow = true;
   group.add(helmet);
 
   const visor = new THREE.Mesh(
@@ -2122,7 +2212,6 @@ function buildSoldierModel(isBoss, tier, isAlly = false) {
     for (const side of [-1, 1]) {
       const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.2), armorMat);
       pauldron.position.set(side * 0.42, 1.42, 0);
-      pauldron.castShadow = true;
       group.add(pauldron);
     }
     const chestPlate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.35, 0.1), armorMat);
@@ -2222,6 +2311,8 @@ function createEnemy(x, z, level = 1, layer = 0, isBoss = false) {
     gunRecoil: 0,
     prevX: x,
     prevZ: z,
+    losSlot: enemies.length % LOS_CHECK_INTERVAL,
+    cachedCanSee: true,
   };
   enemies.push(enemy);
   return enemy;
@@ -2256,8 +2347,15 @@ function clearSummons() {
   summons.length = 0;
 }
 
+function flashDamageOverlay() {
+  const flash = domEl('damage-flash');
+  if (!flash) return;
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 150);
+}
+
 function flashScreen(color, duration = 280) {
-  const flash = document.getElementById('damage-flash');
+  const flash = domEl('damage-flash');
   if (!flash) return;
   const r = (color >> 16) & 255;
   const g = (color >> 8) & 255;
@@ -2698,16 +2796,19 @@ function buildPhoenixModel() {
 }
 
 function spawnPhoenixBurst(x, y, z, count = 10, spread = 2.5) {
+  if (particles.length >= MAX_PARTICLES * 0.9) return;
+  const budget = MAX_PARTICLES - particles.length;
+  count = Math.min(count, Math.floor(budget / 2));
+  const colors = [0xffcc00, 0xff6600, 0xff3300, 0xffee88];
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const r = Math.random() * spread;
-    const colors = [0xffcc00, 0xff6600, 0xff3300, 0xffee88];
     spawnParticles(
       x + Math.cos(angle) * r,
       y + Math.random() * 1.2,
       z + Math.sin(angle) * r,
       colors[i % colors.length],
-      6 + Math.floor(Math.random() * 6)
+      2
     );
   }
 }
@@ -2716,7 +2817,7 @@ function spawnSummonedBoss() {
   const diff = getLevelDifficulty(state.wave);
   const tier = Math.max(0, state.wave - 1);
   const layer = state.currentLayer;
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const forward = _v3a.set(-Math.sin(yaw), 0, -Math.cos(yaw));
   const resolved = resolveMovement(
     { x: camera.position.x, y: LAYER_Y[layer], z: camera.position.z },
     forward.x * 7, 0, forward.z * 7,
@@ -2798,6 +2899,13 @@ function spawnSummonedBoss() {
 
 function getRideablePhoenix() {
   return summons.find(s => s.alive && s.isPhoenix) ?? null;
+}
+
+function hasActiveSummon() {
+  for (const s of summons) {
+    if (s.alive) return true;
+  }
+  return false;
 }
 
 function getPhoenixMountDistance(phoenix = getRideablePhoenix()) {
@@ -2882,15 +2990,11 @@ function phoenixCombat(s, aimY, tx, tz, dt) {
   if (s.shootTimer > 0 || target.dist >= s.range) return false;
 
   s.shootTimer = s.shootCooldown + Math.random() * 120;
-  const dir = new THREE.Vector3(
-    target.x - tx,
-    target.y - aimY,
-    target.z - tz
-  ).normalize();
-  const muzzleX = tx + dir.x * 1.8;
-  const muzzleY = aimY + dir.y * 0.2 + 0.35;
-  const muzzleZ = tz + dir.z * 1.8;
-  phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, s.spread ?? 0.004);
+  _v3c.set(target.x - tx, target.y - aimY, target.z - tz).normalize();
+  const muzzleX = tx + _v3c.x * 1.8;
+  const muzzleY = aimY + _v3c.y * 0.2 + 0.35;
+  const muzzleZ = tz + _v3c.z * 1.8;
+  phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, _v3c, s.spread ?? 0.004);
   return true;
 }
 
@@ -3375,9 +3479,12 @@ function spawnWave(n) {
   state.waveMinionKills = 0;
   state.bossSpawned = false;
   state.bossesAlive = 0;
+  resetWaveConfigCache();
+  invalidateShootTargets();
 
   const cfg = getWaveConfig(n);
   const count = cfg.minionsPerWave;
+  state.waveMinionsSpawned = count;
   const layerCounts = Array(LAYER_COUNT).fill(0);
   for (let i = 0; i < count; i++) {
     layerCounts[i % LAYER_COUNT]++;
@@ -3535,26 +3642,47 @@ function findNearestTargetFromList(targets, ex, ez) {
 
 function findNearestEnemyForAlly(t, maxRange, opts = {}) {
   const range = maxRange ?? t.range ?? 42;
-  const skipLoS = !!opts.skipLoS;
+  const rangeSq = range * range;
+  const skipLoS = !!opts.skipLoS || enemies.length > 50;
   let best = null;
   let bestScore = Infinity;
   const tx = t.group.position.x;
   const tz = t.group.position.z;
   const aimY = getUnitAimY(t);
-  const blockers = skipLoS ? [] : getSightBlockers(t.layer);
 
+  if (skipLoS) {
+    for (const e of enemies) {
+      if (!e.alive || e.layer !== t.layer) continue;
+      const ex = e.group.position.x;
+      const ez = e.group.position.z;
+      const dx = ex - tx;
+      const dz = ez - tz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq > rangeSq) continue;
+      const dist = Math.sqrt(distSq);
+      const score = dist - (e.isBoss ? 20 : 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = { enemy: e, x: ex, y: getUnitAimY(e), z: ez, dist };
+      }
+    }
+    return best;
+  }
+
+  const blockers = getSightBlockers(t.layer);
   for (const e of enemies) {
     if (!e.alive || e.layer !== t.layer) continue;
     const ex = e.group.position.x;
     const ez = e.group.position.z;
     const ey = getUnitAimY(e);
-    const dist = Math.hypot(ex - tx, ez - tz);
-    if (dist > range) continue;
     const dx = ex - tx;
-    const dy = ey - aimY;
     const dz = ez - tz;
+    const distSq = dx * dx + dz * dz;
+    if (distSq > rangeSq) continue;
+    const dist = Math.sqrt(distSq);
+    const dy = ey - aimY;
     const sightDist = Math.hypot(dx, dy, dz);
-    if (!skipLoS && sightDist > 1.2) {
+    if (sightDist > 1.2) {
       _v3a.set(dx / sightDist, dy / sightDist, dz / sightDist);
       raycaster.set(_v3b.set(tx, aimY, tz), _v3a);
       raycaster.far = sightDist - 0.4;
@@ -3570,12 +3698,12 @@ function findNearestEnemyForAlly(t, maxRange, opts = {}) {
 }
 
 function phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, spread = 0) {
-  const aimDir = dir.clone();
+  _v3b.copy(dir);
   if (spread > 0) {
-    aimDir.x += (Math.random() - 0.5) * spread;
-    aimDir.y += (Math.random() - 0.5) * spread;
-    aimDir.z += (Math.random() - 0.5) * spread;
-    aimDir.normalize();
+    _v3b.x += (Math.random() - 0.5) * spread;
+    _v3b.y += (Math.random() - 0.5) * spread;
+    _v3b.z += (Math.random() - 0.5) * spread;
+    _v3b.normalize();
   }
   s.gunRecoil = 1.4;
   s.muzzleFlash = 120;
@@ -3586,73 +3714,20 @@ function phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, spread = 0) {
   const bulletSpeed = TEAMMATE_BULLET_SPEED * 1.65;
   spawnAllyBullet(
     muzzleX, muzzleY, muzzleZ,
-    aimDir.x * bulletSpeed,
-    aimDir.y * bulletSpeed,
-    aimDir.z * bulletSpeed,
+    _v3b.x * bulletSpeed,
+    _v3b.y * bulletSpeed,
+    _v3b.z * bulletSpeed,
     s.damage,
     s
   );
 }
 
 function applyPhoenixSplash(cx, cy, cz, directEnemy, baseDmg, now, owner) {
-  const radius = PHOENIX_SPLASH_RADIUS;
-  const layer = owner?.layer ?? state.currentLayer;
-  let hitAny = false;
-
-  for (const e of enemies) {
-    if (!e.alive || e.layer !== layer || e === directEnemy) continue;
-    const ex = e.group.position.x;
-    const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
-    const ez = e.group.position.z;
-    const dist = Math.hypot(ex - cx, ey - cy, ez - cz);
-    const hitR = radius + (e.isBoss ? 1.4 : 1);
-    if (dist > hitR) continue;
-    const falloff = 1 - (dist / radius) * 0.45;
-    damageEnemy(e, baseDmg * Math.max(0.45, falloff), now, owner);
-    hitAny = true;
-  }
-
-  for (let i = 0; i < 22; i++) {
-    const angle = (i / 22) * Math.PI * 2;
-    const r = radius * (0.25 + Math.random() * 0.75);
-    spawnParticles(
-      cx + Math.cos(angle) * r,
-      cy + (Math.random() - 0.5) * 0.6,
-      cz + Math.sin(angle) * r,
-      i % 2 ? 0xff5500 : 0xffee00,
-      6
-    );
-  }
-  return hitAny;
-}
-
-function phoenixManualAttack(s) {
-  const now = performance.now();
-  const fireRate = s.manualFireRate ?? PHOENIX_MANUAL_FIRE_RATE;
-  if (now - (s.lastManualShot || 0) < fireRate) return;
-  s.lastManualShot = now;
-
-  const floorY = LAYER_Y[s.layer];
-  const aimY = getUnitAimY(s, floorY);
-  const tx = s.group.position.x;
-  const tz = s.group.position.z;
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  const muzzleX = tx + dir.x * 2.8;
-  const muzzleY = aimY + 1.35 + dir.y * 0.5;
-  const muzzleZ = tz + dir.z * 2.8;
-  phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, s.spread ?? 0.004);
-  sfxShootMagma();
+  return applySplashDamage(cx, cy, cz, directEnemy, baseDmg, now, owner, PHOENIX_SPLASH_RADIUS, 22);
 }
 
 function syncTeammateFloor(t) {
-  const rampY = getFootYFromRamp(t.group.position.x, t.group.position.z);
-  if (rampY !== null) {
-    t.group.position.y = rampY;
-    t.layer = getLayerFromFootY(rampY);
-  } else {
-    t.group.position.y = LAYER_Y[t.layer];
-  }
+  syncUnitFloor(t);
 }
 
 function moveTeammateToward(t, targetX, targetZ, speed, dt) {
@@ -3676,6 +3751,28 @@ function moveTeammateToward(t, targetX, targetZ, speed, dt) {
   t.group.position.z = resolved.z;
   syncTeammateFloor(t);
   return true;
+}
+
+function phoenixManualAttack(s) {
+  const now = performance.now();
+  const fireRate = s.manualFireRate ?? PHOENIX_MANUAL_FIRE_RATE;
+  if (now - (s.lastManualShot || 0) < fireRate) return;
+  s.lastManualShot = now;
+
+  const floorY = LAYER_Y[s.layer];
+  const aimY = getUnitAimY(s, floorY);
+  const tx = s.group.position.x;
+  const tz = s.group.position.z;
+  camera.getWorldDirection(_v3c);
+  phoenixLaunchFireball(
+    s,
+    tx + _v3c.x * 2.8,
+    aimY + 1.35 + _v3c.y * 0.5,
+    tz + _v3c.z * 2.8,
+    _v3c,
+    s.spread ?? 0.004
+  );
+  sfxShootMagma();
 }
 
 function spawnAllyBullet(x, y, z, vx, vy, vz, damage, owner = null) {
@@ -3991,7 +4088,7 @@ function updateTeammates(dt) {
         t.gunRecoil = 1;
         t.muzzleFlash = 80;
         const spread = (t.spread ?? 0.012) / boostMult;
-        const dir = new THREE.Vector3(
+        const dir = _v3c.set(
           target.x - tx + (Math.random() - 0.5) * spread,
           target.y - aimY + (Math.random() - 0.5) * spread,
           target.z - tz + (Math.random() - 0.5) * spread
@@ -4043,8 +4140,8 @@ function updateAllyBullets(dt) {
       b.mesh.position.set(b.x, b.y, b.z);
       const spd = Math.hypot(b.vx, b.vy, b.vz) || 1;
       b.mesh.lookAt(b.x + b.vx / spd, b.y + b.vy / spd, b.z + b.vz / spd);
-      if (b.isFireball && Math.random() < 0.92) {
-        spawnParticles(b.x, b.y, b.z, Math.random() < 0.25 ? 0xffffff : Math.random() < 0.5 ? 0xff6600 : 0xffcc00, 5);
+      if (b.isFireball && _animateFrame % 2 === 0 && Math.random() < 0.35) {
+        spawnParticles(b.x, b.y, b.z, Math.random() < 0.25 ? 0xffffff : Math.random() < 0.5 ? 0xff6600 : 0xffcc00, 1);
       }
       if (b.isFireball && b.mesh?.userData?.fireLight) {
         b.mesh.userData.fireLight.intensity = 2.4 + Math.sin(now * 0.03) * 1.2;
@@ -4185,7 +4282,10 @@ function updateEnemies(dt) {
 
     e.group.lookAt(tx, aimY, tz);
 
-    const canSee = canEnemySeeTarget(e, ex, aimY, ez, tx, ty, tz, targetLayer);
+    if (_animateFrame % LOS_CHECK_INTERVAL === e.losSlot) {
+      e.cachedCanSee = canEnemySeeTarget(e, ex, aimY, ez, tx, ty, tz, targetLayer);
+    }
+    const canSee = e.cachedCanSee;
     const hunting = !canSee;
 
     let moved = false;
@@ -4265,19 +4365,21 @@ function updateEnemies(dt) {
     if (canShoot && e.shootTimer <= 0 && dist < shootRange) {
       e.shootTimer = e.shootCooldown + Math.random() * e.shootCooldownRand;
       e.gunRecoil = 1;
-      const dir = new THREE.Vector3(
+      _v3c.set(
         tx - ex + (Math.random() - 0.5) * e.spread,
         ty - aimY + (Math.random() - 0.5) * e.spread,
         tz - ez + (Math.random() - 0.5) * e.spread
       ).normalize();
       const spd = e.bulletSpeed;
-      const muzzleX = ex + dir.x * 0.5;
-      const muzzleY = aimY + dir.y * 0.1;
-      const muzzleZ = ez + dir.z * 0.5;
-      spawnEnemyBullet(muzzleX, muzzleY, muzzleZ, dir.x * spd, dir.y * spd, dir.z * spd, e.damage);
+      const muzzleX = ex + _v3c.x * 0.5;
+      const muzzleY = aimY + _v3c.y * 0.1;
+      const muzzleZ = ez + _v3c.z * 0.5;
+      spawnEnemyBullet(muzzleX, muzzleY, muzzleZ, _v3c.x * spd, _v3c.y * spd, _v3c.z * spd, e.damage);
     }
 
-    e.barFill.lookAt(camera.position);
+    if (e.isBoss || _animateFrame % 3 === e.losSlot) {
+      e.barFill.lookAt(camera.position);
+    }
     e.barFill.scale.x = e.hp / e.maxHp;
     const hpPct = e.hp / e.maxHp;
     if (e.isBoss) {
@@ -4316,9 +4418,10 @@ function advanceLevel() {
     if (!state.playing) return;
 
     state.wave++;
+    resetWaveConfigCache();
+    _shootFrame = -1;
     clearSummons();
     state.summonUsedThisWave = false;
-    state.summonCooldown = 0;
     if (state.ridingPhoenix) state.ridingPhoenix = null;
     clearEnemies();
     refreshTeammates();
@@ -4332,11 +4435,12 @@ function advanceLevel() {
 
 function killEnemy(e, killer = null) {
   e.alive = false;
+  invalidateShootTargets();
   scene.remove(e.group);
   const px = e.group.position.x;
   const py = e.group.position.y + e.aimHeight * e.group.scale.y * 0.7;
   const pz = e.group.position.z;
-  spawnParticles(px, py, pz, e.isBoss ? 0x8e44ad : 0xc0392b, e.isBoss ? 45 : 20);
+  spawnParticles(px, py, pz, e.isBoss ? 0x8e44ad : 0xc0392b, e.isBoss ? 24 : 12);
   sfxKill(e.isBoss);
   state.kills++;
   if (killer?.alive) killer.kills++;
@@ -4359,22 +4463,52 @@ function killEnemy(e, killer = null) {
 
 // ─── Particles ────────────────────────────────────────────────────
 
+function getParticleMat(color) {
+  let mat = _particleMatCache.get(color);
+  if (!mat) {
+    mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+    _particleMatCache.set(color, mat);
+  }
+  return mat;
+}
+
+function acquireParticle(color) {
+  const pooled = _particlePool.pop();
+  if (pooled) {
+    pooled.mesh.visible = true;
+    pooled.mesh.material = getParticleMat(color);
+    return pooled;
+  }
+  const mesh = new THREE.Mesh(_particleGeo, getParticleMat(color));
+  scene.add(mesh);
+  return { mesh, vx: 0, vy: 0, vz: 0, life: 0 };
+}
+
+function releaseParticle(p) {
+  p.mesh.visible = false;
+  _particlePool.push(p);
+}
+
+function clearParticles() {
+  for (const p of particles) releaseParticle(p);
+  particles.length = 0;
+}
+
 function spawnParticles(x, y, z, color, count) {
+  const budget = MAX_PARTICLES - particles.length;
+  if (budget <= 0) return;
+  count = Math.min(count, budget);
   for (let i = 0; i < count; i++) {
-    const geo = new THREE.SphereGeometry(0.08 + Math.random() * 0.1, 4, 4);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(x, y, z);
-    scene.add(mesh);
+    const p = acquireParticle(color);
+    p.mesh.position.set(x, y, z);
     const angle = Math.random() * Math.PI * 2;
     const speed = 2 + Math.random() * 5;
-    particles.push({
-      mesh,
-      vx: Math.cos(angle) * speed,
-      vy: 2 + Math.random() * 4,
-      vz: Math.sin(angle) * speed,
-      life: 600 + Math.random() * 400,
-    });
+    p.vx = Math.cos(angle) * speed;
+    p.vy = 2 + Math.random() * 4;
+    p.vz = Math.sin(angle) * speed;
+    p.life = 600 + Math.random() * 400;
+    p.mesh.scale.setScalar(0.8 + Math.random() * 0.5);
+    particles.push(p);
   }
 }
 
@@ -4388,7 +4522,7 @@ function updateParticles(dt) {
     p.mesh.position.z += p.vz * (dt / 1000);
     p.mesh.material.opacity = Math.max(0, p.life / 600);
     if (p.life <= 0) {
-      scene.remove(p.mesh);
+      releaseParticle(p);
       particles.splice(i, 1);
     }
   }
@@ -4399,8 +4533,7 @@ function updateParticles(dt) {
 const raycaster = new THREE.Raycaster();
 
 function getPlayerForward() {
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  return forward.normalize();
+  return _v3a.set(-Math.sin(yaw), 0, -Math.cos(yaw));
 }
 
 function meleeSlash() {
@@ -4500,7 +4633,7 @@ function getAbilitySlotText(id) {
     return '就绪';
   }
   if (id === 'summonboss') {
-    if (summons.some(s => s.alive)) return '战斗中';
+    if (hasAlivePhoenix()) return '战斗中';
     if (state.summonUsedThisWave) return '本关已用';
     return '就绪';
   }
@@ -4578,7 +4711,7 @@ function activateSummonBoss() {
     return;
   }
   if (now - state.lastShot < weapon.fireRate) return;
-  if (summons.some(s => s.alive)) {
+  if (hasAlivePhoenix()) {
     showWaveBanner(`${SUMMON_BOSS_NAME} 已在战斗中`, 1400);
     return;
   }
@@ -4641,12 +4774,7 @@ function updateAbilities(dt) {
     if (state.allyBoostCooldown === 0) updateHUD();
   }
 
-  if (state.summonCooldown > 0) {
-    state.summonCooldown = Math.max(0, state.summonCooldown - dt);
-    if (state.summonCooldown === 0 && !summons.some(s => s.alive)) updateHUD();
-  }
-
-  if (state.stealthActive || state.allyBoostActive || summons.some(s => s.alive)) {
+  if (state.stealthActive || state.allyBoostActive || hasActiveSummon()) {
     const now = performance.now();
     if (now - (state.lastHudUpdate || 0) > 120) {
       state.lastHudUpdate = now;
@@ -4656,37 +4784,11 @@ function updateAbilities(dt) {
 }
 
 function applyMagmaSplash(cx, cy, cz, directEnemy, baseDmg, now) {
-  const radius = WEAPONS.magma.splashRadius ?? MAGMA_SPLASH_RADIUS;
-  const layer = state.currentLayer;
-  let hitAny = false;
-
-  for (const e of enemies) {
-    if (!e.alive || e.layer !== layer || e === directEnemy) continue;
-    const ex = e.group.position.x;
-    const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
-    const ez = e.group.position.z;
-    const dist = Math.hypot(ex - cx, ey - cy, ez - cz);
-    const hitR = radius + (e.isBoss ? 1.1 : 0.75);
-    if (dist > hitR) continue;
-
-    const falloff = 1 - (dist / radius) * 0.5;
-    damageEnemy(e, baseDmg * Math.max(0.4, falloff), now);
-    hitAny = true;
-  }
-
-  for (let i = 0; i < 18; i++) {
-    const angle = (i / 18) * Math.PI * 2;
-    const r = radius * (0.3 + Math.random() * 0.7);
-    spawnParticles(
-      cx + Math.cos(angle) * r,
-      cy + (Math.random() - 0.5) * 0.5,
-      cz + Math.sin(angle) * r,
-      i % 2 ? 0xff5500 : 0xffee00,
-      5
-    );
-  }
-
-  return hitAny;
+  return applySplashDamage(
+    cx, cy, cz, directEnemy, baseDmg, now, null,
+    WEAPONS.magma.splashRadius ?? MAGMA_SPLASH_RADIUS,
+    18
+  );
 }
 
 function shoot() {
@@ -4733,15 +4835,7 @@ function fireGun() {
     setTimeout(() => { if (weaponMesh) weaponMesh.position.z = baseZ; }, 60);
   }
 
-  const enemyMeshes = [];
-  const meshToEnemy = new Map();
-  for (const e of enemies) {
-    if (!e.alive || e.layer !== state.currentLayer) continue;
-    enemyMeshes.push(e.body, e.head);
-    meshToEnemy.set(e.body, e);
-    meshToEnemy.set(e.head, e);
-  }
-
+  prepareShootTargets(state.currentLayer);
   const wallMeshes = getWallMeshes(state.currentLayer);
 
   const hitColor = weapon.id === 'magma' ? 0xff5500 : 0xff4444;
@@ -4753,20 +4847,21 @@ function fireGun() {
   for (let p = 0; p < weapon.pellets; p++) {
     const spreadX = (Math.random() - 0.5) * weapon.spread * spreadMult;
     const spreadY = (Math.random() - 0.5) * weapon.spread * spreadMult;
-    raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), camera);
+    _v2a.set(spreadX, spreadY);
+    raycaster.setFromCamera(_v2a, camera);
     raycaster.far = gunRange;
 
-    const hits = raycaster.intersectObjects(enemyMeshes, false);
+    const hits = raycaster.intersectObjects(_shootMeshes, false);
     if (hits.length > 0) {
-      const enemy = meshToEnemy.get(hits[0].object);
+      const enemy = _shootMeshMap.get(hits[0].object);
       if (enemy) {
         const isHead = hits[0].object === enemy.head;
         const dmg = getWeaponDamage(weapon, isHead);
         enemy.hp -= dmg;
         enemy.lastHit = now;
-        spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, hitColor, weapon.id === 'magma' ? 14 : 6);
+        spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, hitColor, weapon.id === 'magma' ? 8 : 4);
         if (weapon.id === 'magma') {
-          spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, 0xffee00, 8);
+          spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, 0xffee00, 4);
           applyMagmaSplash(hits[0].point.x, hits[0].point.y, hits[0].point.z, enemy, dmg, now);
         }
         hitEnemy = true;
@@ -4901,8 +4996,7 @@ function takeDamage(amount) {
     const phoenix = state.ridingPhoenix;
     phoenix.hp -= amount;
     phoenix.lastHit = performance.now();
-    document.getElementById('damage-flash').classList.add('active');
-    setTimeout(() => document.getElementById('damage-flash').classList.remove('active'), 150);
+    flashDamageOverlay();
     sfxTakeDamage();
     updateHUD();
     if (phoenix.hp <= 0) killSummon(phoenix);
@@ -4919,8 +5013,7 @@ function takeDamage(amount) {
     setStealthVisual(false);
   }
   updateHUD();
-  document.getElementById('damage-flash').classList.add('active');
-  setTimeout(() => document.getElementById('damage-flash').classList.remove('active'), 150);
+  flashDamageOverlay();
   sfxTakeDamage();
   if (state.hp <= 0) {
     if (hasSquadSurvivors()) downPlayer();
@@ -5140,8 +5233,8 @@ function updatePlayer(dt) {
   if (isAiming()) moveSpeed *= AIM_MOVE_MULT;
   const speed = moveSpeed * (dt / 1000);
 
-  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const forward = _v3a.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const right = _v3b.set(Math.cos(yaw), 0, -Math.sin(yaw));
 
   let dx = 0, dz = 0;
   if (keys['KeyW'] || keys['ArrowUp']) { dx += forward.x * speed; dz += forward.z * speed; }
@@ -5217,11 +5310,11 @@ function updateHUD() {
   const maxHp = getMaxHp();
   const hpPct = Math.max(0, state.hp / maxHp) * 100;
   const aliveTeammates = teammates.filter(t => t.alive).length;
-  document.getElementById('hp-bar').style.width = `${hpPct}%`;
-  document.getElementById('hp-text').textContent = state.playerDown
+  domEl('hp-bar').style.width = `${hpPct}%`;
+  domEl('hp-text').textContent = state.playerDown
     ? `倒地 · ${Math.max(0, state.playerReviveTimer / 1000).toFixed(1)}s 后复活`
     : `${Math.max(0, Math.ceil(state.hp))} / ${maxHp}`;
-  document.getElementById('ammo-text').textContent = weapon.ability
+  domEl('ammo-text').textContent = weapon.ability
     ? getAbilityStatusText(weapon)
     : weapon.melee
       ? '∞ 近战'
@@ -5230,15 +5323,15 @@ function updateHUD() {
         : state.reloading
           ? '换弹中...'
           : `${state.ammo} / ${state.reserve}`;
-  document.getElementById('ammo-text').classList.toggle('low', !weapon.melee && !weapon.infinite && !weapon.ability && state.ammo <= 5 && !state.reloading);
-  document.getElementById('kill-text').textContent = `击杀 ${state.kills} · 队友 ${aliveTeammates}/${TEAMMATE_COUNT}`;
+  domEl('ammo-text').classList.toggle('low', !weapon.melee && !weapon.infinite && !weapon.ability && state.ammo <= 5 && !state.reloading);
+  domEl('kill-text').textContent = `击杀 ${state.kills} · 队友 ${aliveTeammates}/${TEAMMATE_COUNT}`;
   const waveCfg = getWaveConfig(state.wave);
   const waveSuffix = state.bossSpawned
     ? ` · Boss ${Math.max(0, state.bossesAlive)}/${BOSSES_PER_WAVE}`
     : ` · 小怪 ${Math.min(state.waveMinionKills, waveCfg.minionsToBoss)}/${waveCfg.minionsToBoss}`;
-  document.getElementById('wave-text').textContent = `${getWaveHudText(state.wave)}${waveSuffix}`;
-  document.getElementById('layer-text').textContent = `第 ${state.currentLayer + 1} 层`;
-  document.getElementById('weapon-hud').innerHTML = weapon.ability
+  domEl('wave-text').textContent = `${getWaveHudText(state.wave)}${waveSuffix}`;
+  domEl('layer-text').textContent = `第 ${state.currentLayer + 1} 层`;
+  domEl('weapon-hud').innerHTML = weapon.ability
     ? `${weapon.name} · <kbd>左键</kbd> ${weapon.abilityLabel || '使用'} · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 切换`
     : weapon.id === 'katana'
       ? `${getKatanaDisplayName()} · ${getKatanaElement().desc} · 伤害 ${getKatanaMeleeStats().damage}`
@@ -5255,7 +5348,7 @@ function updateHUD() {
     if (!el) continue;
     el.classList.toggle('active', id === state.weaponId);
     el.classList.toggle('phoenix-slot', id === 'summonboss');
-    el.classList.toggle('phoenix-battle', id === 'summonboss' && summons.some(s => s.alive));
+    el.classList.toggle('phoenix-battle', id === 'summonboss' && hasAlivePhoenix());
     el.classList.toggle('katana-tier', id === 'katana' && state.katanaTier > 0);
     for (const tierCls of ['katana-fire', 'katana-frost', 'katana-thunder', 'katana-venom', 'katana-radiance']) {
       el.classList.remove(tierCls);
@@ -5346,7 +5439,6 @@ function startGame() {
   state.allyBoostActive = false;
   state.allyBoostTimer = 0;
   state.allyBoostCooldown = 0;
-  state.summonCooldown = 0;
   state.summonUsedThisWave = false;
   state.sanctuaryStay = 0;
   state.playerDown = false;
@@ -5373,8 +5465,7 @@ function startGame() {
     if (b.mesh) scene.remove(b.mesh);
   }
   enemyBullets.length = 0;
-  for (const p of particles) scene.remove(p.mesh);
-  particles.length = 0;
+  clearParticles();
 
   spawnTeammates();
   spawnWave(1);
@@ -5483,6 +5574,7 @@ let lastTime = performance.now();
 
 function animate() {
   requestAnimationFrame(animate);
+  _animateFrame++;
   const now = performance.now();
   const dt = Math.min(now - lastTime, 50);
   lastTime = now;
