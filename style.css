@@ -348,6 +348,34 @@ body {
   font-weight: 700;
 }
 
+.weapon-slot.phoenix-slot {
+  border-color: rgba(255, 140, 40, 0.35);
+}
+
+.weapon-slot.phoenix-slot.active {
+  border-color: rgba(255, 200, 80, 0.85);
+  box-shadow: 0 0 22px rgba(255, 120, 0, 0.55), inset 0 0 12px rgba(255, 80, 0, 0.15);
+}
+
+.weapon-slot.phoenix-slot .slot-ammo {
+  color: #ffaa44;
+}
+
+.weapon-slot.phoenix-battle {
+  animation: phoenixPulse 1.1s ease-in-out infinite;
+}
+
+.weapon-slot.phoenix-battle .slot-ammo {
+  color: #ffee66;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(255, 180, 0, 0.8);
+}
+
+@keyframes phoenixPulse {
+  0%, 100% { box-shadow: 0 0 16px rgba(255, 100, 0, 0.45); }
+  50% { box-shadow: 0 0 28px rgba(255, 200, 80, 0.75); }
+}
+
 #weapon-hud {
   position: absolute;
   bottom: 108px;
@@ -509,6 +537,35 @@ body {
 
 #flight-hud.cooldown {
   color: rgba(255,180,100,0.7);
+}
+
+#ride-hud {
+  position: absolute;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: rgba(255,200,120,0.75);
+  letter-spacing: 0.05em;
+  transition: color 0.2s, text-shadow 0.2s;
+  white-space: nowrap;
+}
+
+#ride-hud.nearby {
+  color: #ffcc66;
+  text-shadow: 0 0 14px rgba(255,180,0,0.55);
+  animation: phoenixMountHint 1.4s ease-in-out infinite;
+}
+
+#ride-hud.active {
+  color: #ffeeaa;
+  text-shadow: 0 0 16px rgba(255,140,0,0.75);
+}
+
+@keyframes phoenixMountHint {
+  0%, 100% { opacity: 0.85; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.03); }
 }
 
 #boost-hud {

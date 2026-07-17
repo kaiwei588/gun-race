@@ -18,7 +18,7 @@ const FLIGHT_VERTICAL_SPEED = 14;
 const JUMP_VELOCITY = 15;
 const GRAVITY = 34;
 const ENEMY_DAMAGE = 12;
-const DIFFICULTY_MULT = 1;
+const DIFFICULTY_MULT = 2;
 const KILL_HEAL = 12;
 const REGEN_DELAY = 3000;
 const REGEN_PER_SEC = 100;
@@ -30,9 +30,10 @@ const SANCTUARY_SPOTS = [
   { x: 0, z: -32 },
 ];
 const ARENA_SIZE = 60;
+const LAYER_HEIGHT_MULT = 3;
 const WALL_HEIGHT = 4;
 const LAYER_COUNT = 3;
-const LAYER_HEIGHT = 5;
+const LAYER_HEIGHT = 5 * LAYER_HEIGHT_MULT;
 const LAYER_Y = [0, LAYER_HEIGHT, LAYER_HEIGHT * 2];
 const FLIGHT_MAX_HEIGHT = LAYER_Y[2] + WALL_HEIGHT + 6;
 const PLAYER_EYE_OFFSET = 1.7;
@@ -42,8 +43,6 @@ const MOUSE_SENS = 0.002;
 const AIM_MOUSE_SENS = 0.0011;
 const AIM_MOVE_MULT = 0.55;
 const AIM_SPREAD_MULT = 0.35;
-const ENEMY_COUNT = 79;
-const MIN_ENEMIES_PER_LAYER = 21;
 const TEAMMATE_COUNT = 2;
 const BOSSES_PER_WAVE = 3;
 const TEAMMATE_POWER_MULT = 4;
@@ -68,8 +67,11 @@ const BOSS_HUES = [0.0, 0.06, 0.58];
 const BOSS_POWER_MULT = 2;
 const WEAPON_SWITCH_COOLDOWN = 300;
 const CYCLE_LENGTH = 15;
-const BASE_MINIONS_PER_WAVE = 350;
-const BASE_MINIONS_TO_BOSS = 100;
+const BASE_MINIONS_PER_WAVE = 120;
+const BASE_MINIONS_TO_BOSS = 120;
+const MAGMA_SPLASH_RADIUS = 2.5 * 6;
+const GUN_RANGE_MULT = 20;
+const MAGMA_GUN_RANGE = ARENA_SIZE * 2 * GUN_RANGE_MULT;
 
 const LAYER_COVERS = [
   [
@@ -98,11 +100,16 @@ const LAYER_COVERS = [
   ],
 ];
 
+const STAIR_HALF_WIDTH = 2.5;
+const STAIR_HALF_DEPTH = 8;
+const STAIR_STEP_WIDTH = 3;
+const STAIR_STEPS = 8 * LAYER_HEIGHT_MULT;
+
 const WALK_RAMPS = [
-  { cx: 27, cz: 0, halfW: 2.5, halfD: 8, yBottom: 0, yTop: 5 },
-  { cx: 27, cz: 0, halfW: 2.5, halfD: 8, yBottom: 5, yTop: 10 },
-  { cx: -27, cz: 0, halfW: 2.5, halfD: 8, yBottom: 0, yTop: 5 },
-  { cx: -27, cz: 0, halfW: 2.5, halfD: 8, yBottom: 5, yTop: 10 },
+  { cx: 27, cz: 0, halfW: STAIR_HALF_WIDTH, halfD: STAIR_HALF_DEPTH, yBottom: LAYER_Y[0], yTop: LAYER_Y[1] },
+  { cx: 27, cz: 0, halfW: STAIR_HALF_WIDTH, halfD: STAIR_HALF_DEPTH, yBottom: LAYER_Y[1], yTop: LAYER_Y[2] },
+  { cx: -27, cz: 0, halfW: STAIR_HALF_WIDTH, halfD: STAIR_HALF_DEPTH, yBottom: LAYER_Y[0], yTop: LAYER_Y[1] },
+  { cx: -27, cz: 0, halfW: STAIR_HALF_WIDTH, halfD: STAIR_HALF_DEPTH, yBottom: LAYER_Y[1], yTop: LAYER_Y[2] },
 ];
 
 const WEAPONS = {
@@ -126,23 +133,14 @@ const WEAPONS = {
     cooldown: 18000,
     fireRate: 600,
   },
-  hammer: {
-    id: 'hammer',
-    name: '电锤',
+  summonboss: {
+    id: 'summonboss',
+    name: '召唤凤凰',
     slot: 3,
-    melee: true,
-    meleeLabel: '锤击',
-    magSize: 0,
-    reserve: 0,
-    reloadTime: 0,
-    fireRate: 800,
-    damage: 58,
-    headshotMult: 2,
-    spread: 0,
-    pellets: 1,
-    recoilZ: 0,
-    range: 3.4,
-    arc: Math.PI / 2.1,
+    ability: true,
+    abilityLabel: '召唤',
+    cooldown: 40000,
+    fireRate: 900,
   },
   katana: {
     id: 'katana',
@@ -167,19 +165,33 @@ const WEAPONS = {
     name: '岩浆枪',
     slot: 5,
     infinite: true,
+    autoFire: true,
     magSize: 0,
     reserve: 0,
     reloadTime: 0,
-    fireRate: 480,
+    fireRate: 90,
     damage: 450,
+    range: MAGMA_GUN_RANGE,
     headshotMult: 2,
     spread: 0.008,
     pellets: 1,
     recoilZ: 0.09,
+    splashRadius: MAGMA_SPLASH_RADIUS,
   },
 };
 
-const WEAPON_ORDER = ['stealth', 'allyboost', 'hammer', 'katana', 'magma'];
+const WEAPON_ORDER = ['stealth', 'allyboost', 'summonboss', 'katana', 'magma'];
+const SUMMON_BOSS_SCALE = 4.6;
+const SUMMON_BOSS_NAME = '凤凰';
+const PHOENIX_DAMAGE = 1000;
+const PHOENIX_RANGE = MAGMA_GUN_RANGE;
+const PHOENIX_FIRE_RATE = 280;
+const PHOENIX_MANUAL_FIRE_RATE = 120;
+const PHOENIX_SPLASH_RADIUS = MAGMA_SPLASH_RADIUS * 0.85;
+const PHOENIX_MOUNT_RANGE = 30;
+const PHOENIX_MOUNT_COOLDOWN = 350;
+const PHOENIX_RIDE_SPEED_MULT = 1.65;
+const PHOENIX_RIDE_CAM_HEIGHT = 1.05;
 
 const EQUIPMENT = {
   medkit: { id: 'medkit', name: '战术医疗包', desc: '最大生命 +250', maxHp: 250 },
@@ -278,6 +290,8 @@ const state = {
   allyBoostActive: false,
   allyBoostTimer: 0,
   allyBoostCooldown: 0,
+  summonCooldown: 0,
+  summonUsedThisWave: false,
   sanctuaryStay: 0,
   playerDown: false,
   playerReviveTimer: 0,
@@ -286,7 +300,419 @@ const state = {
   playerDownZ: 0,
   playerDownLayer: 0,
   katanaTier: 0,
+  ridingPhoenix: null,
+  lastMountToggle: 0,
+  magmaSfxTime: 0,
 };
+
+// ─── Audio ────────────────────────────────────────────────────────
+
+let audioCtx = null;
+let sfxBus = null;
+let bgmBus = null;
+let bgmState = null;
+let sfxDelay = null;
+let sfxDelayFb = null;
+
+const AUDIO_VOL = { master: 0.92, bgm: 0.26, sfx: 0.58 };
+
+function ensureAudio() {
+  if (!window.AudioContext && !window.webkitAudioContext) return;
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    sfxBus = audioCtx.createGain();
+    bgmBus = audioCtx.createGain();
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -22;
+    comp.knee.value = 18;
+    comp.ratio.value = 3;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.18;
+    comp.connect(audioCtx.destination);
+
+    sfxDelay = audioCtx.createDelay(0.6);
+    sfxDelay.delayTime.value = 0.14;
+    sfxDelayFb = audioCtx.createGain();
+    sfxDelayFb.gain.value = 0.32;
+    const delayFilter = audioCtx.createBiquadFilter();
+    delayFilter.type = 'lowpass';
+    delayFilter.frequency.value = 2800;
+    sfxBus.connect(comp);
+    sfxBus.connect(sfxDelay);
+    sfxDelay.connect(delayFilter);
+    delayFilter.connect(sfxDelayFb);
+    sfxDelayFb.connect(sfxDelay);
+    delayFilter.connect(comp);
+
+    bgmBus.connect(comp);
+    sfxBus.gain.value = AUDIO_VOL.sfx * AUDIO_VOL.master;
+    bgmBus.gain.value = AUDIO_VOL.bgm * AUDIO_VOL.master;
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, dur, type = 'square', vol = 0.08, detune = 0, dest = null) {
+  if (!audioCtx || !sfxBus) return;
+  const out = dest || sfxBus;
+  const t0 = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  o.detune.value = detune;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g);
+  g.connect(out);
+  o.start(t0);
+  o.stop(t0 + dur + 0.02);
+}
+
+function playSweep(freqFrom, freqTo, dur, type = 'sawtooth', vol = 0.08, detune = 0) {
+  if (!audioCtx || !sfxBus) return;
+  const t0 = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freqFrom, t0);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, freqTo), t0 + dur);
+  o.detune.value = detune;
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g);
+  g.connect(sfxBus);
+  o.start(t0);
+  o.stop(t0 + dur + 0.03);
+}
+
+function playNoise(dur, vol = 0.06, freq = 800, q = 0.8, filterType = 'bandpass') {
+  if (!audioCtx || !sfxBus) return;
+  const t0 = audioCtx.currentTime;
+  const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = filterType;
+  filter.frequency.setValueAtTime(freq, t0);
+  if (filterType === 'bandpass') filter.Q.value = q;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(sfxBus);
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
+
+function playNoiseSweep(dur, vol, freqFrom, freqTo) {
+  if (!audioCtx || !sfxBus) return;
+  const t0 = audioCtx.currentTime;
+  const len = Math.max(1, Math.floor(audioCtx.sampleRate * dur));
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(freqFrom, t0);
+  filter.frequency.exponentialRampToValueAtTime(Math.max(80, freqTo), t0 + dur);
+  filter.Q.value = 1.2;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  src.connect(filter);
+  filter.connect(g);
+  g.connect(sfxBus);
+  src.start(t0);
+  src.stop(t0 + dur + 0.02);
+}
+
+function playChord(freqs, dur, type = 'sawtooth', vol = 0.05) {
+  freqs.forEach((f, i) => playTone(f, dur, type, vol * (1 - i * 0.12), (i - 1) * 6));
+}
+
+function playImpact(subFreq = 80, dur = 0.14) {
+  playSweep(subFreq * 2.2, subFreq * 0.5, dur, 'sine', 0.12);
+  playNoise(dur * 0.7, 0.11, 900, 1.1);
+  playTone(subFreq, dur * 0.5, 'square', 0.06);
+}
+
+function playBgmKick(when) {
+  if (!audioCtx || !bgmBus) return;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = 'sine';
+  o.frequency.setValueAtTime(150, when);
+  o.frequency.exponentialRampToValueAtTime(42, when + 0.12);
+  g.gain.setValueAtTime(0.55, when);
+  g.gain.exponentialRampToValueAtTime(0.001, when + 0.18);
+  o.connect(g);
+  g.connect(bgmBus);
+  o.start(when);
+  o.stop(when + 0.2);
+  playNoise(0.04, 0.04, 180, 0.6, 'highpass');
+}
+
+function playBgmHat(when) {
+  if (!audioCtx || !bgmBus) return;
+  playNoise(0.035, 0.025, 7000, 2, 'highpass');
+  playTone(8000, 0.02, 'square', 0.008, 0, bgmBus);
+}
+
+function scheduleBgmLoop() {
+  if (!bgmState?.active || !audioCtx || !bgmBus) return;
+  const t0 = audioCtx.currentTime + 0.04;
+  const minorArp = [110, 131, 165, 196, 220, 196, 165, 131];
+  const leadArp = [220, 262, 330, 392, 440, 392, 330, 262];
+
+  minorArp.forEach((freq, i) => {
+    const when = t0 + i * 0.28;
+    playBgmKick(when);
+    if (i % 2 === 1) playBgmHat(when + 0.04);
+
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    const f = audioCtx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(1800, when);
+    f.frequency.linearRampToValueAtTime(4200, when + 0.08);
+    f.frequency.exponentialRampToValueAtTime(900, when + 0.26);
+    o.type = i % 2 ? 'sawtooth' : 'triangle';
+    o.frequency.value = freq;
+    o.detune.value = (Math.random() - 0.5) * 10;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(0.034, when + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.001, when + 0.24);
+    o.connect(f);
+    f.connect(g);
+    g.connect(bgmBus);
+    o.start(when);
+    o.stop(when + 0.26);
+
+    const lead = audioCtx.createOscillator();
+    const lg = audioCtx.createGain();
+    lead.type = 'square';
+    lead.frequency.value = leadArp[i];
+    lg.gain.setValueAtTime(0, when + 0.06);
+    lg.gain.linearRampToValueAtTime(0.012, when + 0.08);
+    lg.gain.exponentialRampToValueAtTime(0.001, when + 0.22);
+    lead.connect(lg);
+    lg.connect(bgmBus);
+    lead.start(when + 0.06);
+    lead.stop(when + 0.24);
+  });
+
+  bgmState.loopTimer = setTimeout(scheduleBgmLoop, minorArp.length * 280);
+}
+
+function startBGM() {
+  ensureAudio();
+  if (!audioCtx || !bgmBus) return;
+  stopBGM();
+  bgmState = { active: true, nodes: [], loopTimer: null };
+
+  const bass = audioCtx.createOscillator();
+  bass.type = 'sawtooth';
+  bass.frequency.value = 55;
+  const bassFilter = audioCtx.createBiquadFilter();
+  bassFilter.type = 'lowpass';
+  bassFilter.frequency.value = 280;
+  const bassGain = audioCtx.createGain();
+  bassGain.gain.value = 0.14;
+  bass.connect(bassFilter);
+  bassFilter.connect(bassGain);
+  bassGain.connect(bgmBus);
+  bass.start();
+  bgmState.nodes.push(bass, bassFilter);
+
+  const sub = audioCtx.createOscillator();
+  sub.type = 'sine';
+  sub.frequency.value = 27.5;
+  const subGain = audioCtx.createGain();
+  subGain.gain.value = 0.22;
+  sub.connect(subGain);
+  subGain.connect(bgmBus);
+  sub.start();
+  bgmState.nodes.push(sub);
+
+  for (const freq of [82.41, 110, 164.81, 220]) {
+    const o = audioCtx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = freq;
+    o.detune.value = (Math.random() - 0.5) * 12;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.028;
+    o.connect(g);
+    g.connect(bgmBus);
+    o.start();
+    bgmState.nodes.push(o);
+  }
+
+  const lfo = audioCtx.createOscillator();
+  lfo.type = 'sine';
+  lfo.frequency.value = 0.06;
+  const lfoGain = audioCtx.createGain();
+  lfoGain.gain.value = 0.018;
+  lfo.connect(lfoGain);
+  lfoGain.connect(bgmBus.gain);
+  lfo.start();
+  bgmState.nodes.push(lfo);
+
+  scheduleBgmLoop();
+}
+
+function stopBGM() {
+  if (!bgmState) return;
+  bgmState.active = false;
+  if (bgmState.loopTimer) clearTimeout(bgmState.loopTimer);
+  for (const node of bgmState.nodes) {
+    try { node.stop(); } catch (_) {}
+    try { node.disconnect(); } catch (_) {}
+  }
+  bgmState = null;
+  if (bgmBus) {
+    bgmBus.gain.cancelScheduledValues(0);
+    bgmBus.gain.value = AUDIO_VOL.bgm * AUDIO_VOL.master;
+  }
+}
+
+function sfxShootMagma() {
+  playImpact(65, 0.16);
+  playNoiseSweep(0.12, 0.12, 2400, 180);
+  playSweep(420, 90, 0.1, 'sawtooth', 0.07);
+  playTone(880, 0.04, 'square', 0.03);
+}
+
+function sfxKatanaSlash() {
+  playNoiseSweep(0.09, 0.1, 400, 4200);
+  playSweep(1200, 280, 0.07, 'sawtooth', 0.06);
+  playTone(660, 0.05, 'triangle', 0.04);
+  playTone(990, 0.03, 'sine', 0.025);
+}
+
+function sfxHit() {
+  playImpact(120, 0.08);
+  playSweep(600, 200, 0.05, 'square', 0.05);
+}
+
+function sfxKill(isBoss = false) {
+  if (isBoss) {
+    playImpact(45, 0.35);
+    playSweep(880, 110, 0.4, 'sawtooth', 0.09);
+    playChord([110, 138, 165, 220], 0.45, 'sawtooth', 0.05);
+    playNoise(0.25, 0.12, 400, 0.5, 'lowpass');
+  } else {
+    playImpact(90, 0.1);
+    playSweep(440, 880, 0.08, 'square', 0.05);
+    playTone(660, 0.06, 'sine', 0.04);
+  }
+}
+
+function sfxTakeDamage() {
+  playImpact(55, 0.12);
+  playNoiseSweep(0.1, 0.11, 600, 120);
+  playSweep(180, 60, 0.14, 'sawtooth', 0.07);
+}
+
+function sfxStealth() {
+  playNoiseSweep(0.2, 0.07, 3000, 400);
+  playSweep(1200, 400, 0.18, 'sine', 0.05);
+  playTone(880, 0.06, 'triangle', 0.03);
+  playTone(1320, 0.1, 'sine', 0.025);
+}
+
+function sfxAllyBoost() {
+  playSweep(330, 660, 0.12, 'sawtooth', 0.05);
+  playChord([440, 554, 659, 880], 0.2, 'sawtooth', 0.045);
+  playNoise(0.08, 0.04, 2000, 1.5, 'highpass');
+}
+
+function sfxSummonPhoenix() {
+  playImpact(40, 0.2);
+  playSweep(120, 440, 0.45, 'sawtooth', 0.08);
+  playSweep(220, 880, 0.5, 'triangle', 0.06);
+  playNoiseSweep(0.35, 0.1, 200, 2800);
+  playChord([220, 277, 330, 440], 0.55, 'sawtooth', 0.04);
+}
+
+function sfxBoost() {
+  playSweep(120, 520, 0.2, 'sawtooth', 0.07);
+  playNoiseSweep(0.18, 0.08, 800, 3200);
+  playTone(660, 0.12, 'square', 0.04);
+}
+
+function sfxFlight() {
+  playNoiseSweep(0.25, 0.07, 1200, 4500);
+  playSweep(220, 880, 0.22, 'sine', 0.05);
+  playTone(440, 0.15, 'triangle', 0.035);
+}
+
+function sfxMount() {
+  playSweep(220, 660, 0.14, 'sawtooth', 0.06);
+  playChord([392, 494, 587, 784], 0.18, 'triangle', 0.04);
+  playNoiseSweep(0.12, 0.06, 500, 2200);
+}
+
+function sfxDismount() {
+  playSweep(660, 220, 0.1, 'triangle', 0.05);
+  playNoise(0.06, 0.05, 600);
+}
+
+function sfxJump() {
+  playSweep(180, 420, 0.07, 'square', 0.045);
+  playTone(330, 0.05, 'sine', 0.03);
+}
+
+function sfxWaveStart() {
+  playImpact(70, 0.12);
+  playSweep(220, 880, 0.22, 'sawtooth', 0.07);
+  playChord([330, 415, 494, 660], 0.28, 'sawtooth', 0.045);
+}
+
+function sfxBossSpawn() {
+  playImpact(35, 0.4);
+  playSweep(880, 55, 0.55, 'sawtooth', 0.1);
+  playNoise(0.35, 0.14, 120, 0.4, 'lowpass');
+  playChord([55, 69, 82, 110], 0.6, 'square', 0.06);
+}
+
+function sfxLevelComplete() {
+  playSweep(440, 880, 0.15, 'sine', 0.06);
+  playChord([523, 659, 784, 988], 0.35, 'sawtooth', 0.05);
+  playNoise(0.1, 0.05, 4000, 2, 'highpass');
+}
+
+function sfxPickup() {
+  playSweep(660, 1320, 0.1, 'sine', 0.06);
+  playChord([880, 1108, 1320], 0.16, 'triangle', 0.04);
+  playTone(1760, 0.08, 'sine', 0.03);
+}
+
+function sfxWeaponSwitch() {
+  playSweep(880, 440, 0.05, 'square', 0.035);
+  playTone(660, 0.03, 'triangle', 0.025);
+}
+
+function sfxGameOver(won = false) {
+  if (won) {
+    playSweep(440, 880, 0.2, 'sine', 0.07);
+    playChord([523, 659, 784, 988, 1175], 0.5, 'sawtooth', 0.045);
+  } else {
+    playImpact(40, 0.3);
+    playSweep(220, 49, 0.6, 'sawtooth', 0.09);
+    playNoise(0.3, 0.1, 80, 0.3, 'lowpass');
+  }
+}
+
+function sfxUIClick() {
+  playSweep(660, 990, 0.05, 'square', 0.04);
+  playTone(1320, 0.03, 'sine', 0.02);
+}
 
 const keys = {};
 const mouse = { down: false };
@@ -321,7 +747,6 @@ sun.shadow.camera.left = -50;
 sun.shadow.camera.right = 50;
 sun.shadow.camera.top = 50;
 sun.shadow.camera.bottom = -50;
-sun.position.set(20, 55, 15);
 scene.add(sun);
 
 const fill = new THREE.DirectionalLight(0x6688cc, 0.3);
@@ -349,13 +774,13 @@ function makeFloorTexture(baseColor = '#2c3e50') {
 }
 
 function buildStairs(cx, cz, halfD, yBottom, yTop, mat) {
-  const steps = 8;
+  const steps = STAIR_STEPS;
   const depth = halfD * 2;
   const rise = (yTop - yBottom) / steps;
   const run = depth / steps;
   for (let i = 0; i < steps; i++) {
     const step = new THREE.Mesh(
-      new THREE.BoxGeometry(3, rise, run + 0.05),
+      new THREE.BoxGeometry(STAIR_STEP_WIDTH, rise, run + 0.05),
       mat
     );
     step.position.set(
@@ -375,11 +800,19 @@ const colliders = [];
 const sanctuaries = [];
 const enemies = [];
 const teammates = [];
+const summons = [];
 const particles = [];
 const enemyBullets = [];
 const allyBullets = [];
 let weaponMesh = null;
 let muzzleFlash = null;
+
+const _v3a = new THREE.Vector3();
+const _v3b = new THREE.Vector3();
+const _v3c = new THREE.Vector3();
+const sightBlockerCache = [];
+const wallMeshCache = [];
+const _barLookAt = new THREE.Vector3();
 
 function addCollider(mesh, w, h, d, layer = -1) {
   colliders.push({ mesh, w, h, d, layer });
@@ -1074,70 +1507,60 @@ function createWeaponMesh(id) {
     gun.userData.muzzle = new THREE.Vector3(0.2, -0.02, -0.38);
     gun.userData.flashSize = 0;
     gun.position.set(0.22, -0.16, -0.35);
-  } else if (id === 'hammer') {
-    const motorMat = new THREE.MeshStandardMaterial({ color: 0xf0b429, roughness: 0.55, metalness: 0.2 });
-    const gripMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1c, roughness: 0.92 });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0x6a6a6a, metalness: 0.75, roughness: 0.3 });
-    const electricMat = new THREE.MeshStandardMaterial({
-      color: 0x33ddff,
-      emissive: 0x0088ff,
-      emissiveIntensity: 0.7,
-      metalness: 0.85,
-      roughness: 0.15,
+  } else if (id === 'summonboss') {
+    const flameMat = new THREE.MeshStandardMaterial({
+      color: 0xff5500, emissive: 0xff2200, emissiveIntensity: 1.35,
+      metalness: 0.3, roughness: 0.25,
+    });
+    const goldMat = new THREE.MeshStandardMaterial({
+      color: 0xffee55, emissive: 0xffbb00, emissiveIntensity: 1.4,
+      metalness: 0.45, roughness: 0.12,
+    });
+    const whiteMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.92,
     });
 
-    const motor = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.13, 0.3), motorMat);
-    motor.position.set(0.26, -0.15, -0.3);
-    gun.add(motor);
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.008, 8, 28), goldMat);
+    halo.rotation.x = Math.PI / 2;
+    halo.position.set(0.2, -0.06, -0.36);
+    gun.add(halo);
 
-    const ventL = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.18), gripMat);
-    ventL.position.set(0.2, -0.15, -0.3);
-    gun.add(ventL);
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.048, 12, 12), goldMat);
+    orb.position.set(0.2, -0.06, -0.36);
+    gun.add(orb);
+    const orbCore = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 8), whiteMat);
+    orbCore.position.set(0.2, -0.06, -0.36);
+    gun.add(orbCore);
 
-    const ventR = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, 0.18), gripMat);
-    ventR.position.set(0.32, -0.15, -0.3);
-    gun.add(ventR);
+    for (let i = 0; i < 5; i++) {
+      const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const len = 0.12 + (i % 2) * 0.04;
+      const feather = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.012, len), i % 2 ? goldMat : flameMat);
+      feather.position.set(0.2 + Math.cos(angle) * 0.07, -0.04 + Math.sin(angle) * 0.03, -0.38);
+      feather.rotation.z = angle * 0.65;
+      gun.add(feather);
+    }
 
-    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.014, 6, 14), electricMat);
-    coil.position.set(0.26, -0.1, -0.44);
-    gun.add(coil);
+    for (const side of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.018, 0.2), flameMat);
+      wing.position.set(0.2 + side * 0.1, -0.02, -0.34);
+      wing.rotation.z = side * 0.75;
+      gun.add(wing);
+      const tip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.12), goldMat);
+      tip.position.set(0.2 + side * 0.15, 0.01, -0.42);
+      tip.rotation.z = side * 0.9;
+      gun.add(tip);
+    }
 
-    const coil2 = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.01, 6, 12), electricMat);
-    coil2.position.set(0.26, -0.1, -0.5);
-    gun.add(coil2);
+    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.025, 0.12, 5), flameMat);
+    tail.rotation.x = -0.5;
+    tail.position.set(0.2, -0.1, -0.28);
+    gun.add(tail);
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.11, 0.16), headMat);
-    head.position.set(0.26, -0.1, -0.58);
-    gun.add(head);
-
-    const chisel = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.12), headMat);
-    chisel.position.set(0.26, -0.1, -0.7);
-    gun.add(chisel);
-
-    const spark = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 6, 6),
-      new THREE.MeshBasicMaterial({ color: 0x88eeff, transparent: true, opacity: 0.85 })
-    );
-    spark.position.set(0.26, -0.1, -0.76);
-    gun.add(spark);
-
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.16, 0.07), gripMat);
-    handle.position.set(0.26, -0.3, -0.12);
-    gun.add(handle);
-
-    const trigger = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.04), bodyMat);
-    trigger.position.set(0.26, -0.22, -0.18);
-    gun.add(trigger);
-
-    const cord = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.2), gripMat);
-    cord.position.set(0.26, -0.34, 0.02);
-    gun.add(cord);
-
-    gun.userData.head = head;
-    gun.userData.muzzle = new THREE.Vector3(0.26, -0.1, -0.78);
-    gun.userData.flashSize = 0;
-    gun.position.set(0.28, -0.2, -0.32);
-    gun.rotation.x = 0.25;
+    gun.userData.muzzle = new THREE.Vector3(0.2, -0.06, -0.44);
+    gun.userData.flashSize = 0.12;
+    gun.userData.flashColor = 0xffee88;
+    gun.position.set(0.22, -0.16, -0.35);
   } else if (id === 'katana') {
     return createKatanaMesh();
   } else if (id === 'magma') {
@@ -1262,6 +1685,7 @@ function grantRandomEquipment() {
   const eq = EQUIPMENT[id];
   if (eq.maxHp) state.hp = Math.min(getMaxHp(), state.hp + eq.maxHp);
   updateEquipmentHUD();
+  sfxPickup();
   return eq;
 }
 
@@ -1329,6 +1753,7 @@ function switchWeapon(slot) {
   if (!target || target === state.weaponId) return;
 
   state.lastWeaponSwitch = now;
+  sfxWeaponSwitch();
   equipWeapon(target);
 }
 
@@ -1495,15 +1920,12 @@ function getWaveConfig(wave) {
   const posInCycle = tier % CYCLE_LENGTH;
   const isCycleFinale = posInCycle === CYCLE_LENGTH - 1;
 
-  const linearScale = 1 + tier * 0.1;
-  const cycleScale = 1 + cycleIndex * 0.45;
-  const finaleScale = isCycleFinale ? 3 : 1;
+  const linearScale = 1 + tier * 0.14 * DIFFICULTY_MULT;
+  const cycleScale = 1 + cycleIndex * 0.55 * Math.sqrt(DIFFICULTY_MULT);
+  const finaleScale = isCycleFinale ? 2.5 + DIFFICULTY_MULT * 0.35 : 1;
   const intensity = linearScale * cycleScale * finaleScale;
 
-  const minionsPerWave = Math.min(
-    500,
-    Math.floor(BASE_MINIONS_PER_WAVE + tier * 3 + cycleIndex * 10 + (isCycleFinale ? 40 : 0))
-  );
+  const minionsPerWave = BASE_MINIONS_PER_WAVE;
   const minionsToBoss = BASE_MINIONS_TO_BOSS;
 
   return { tier, cycleIndex, posInCycle, isCycleFinale, intensity, minionsPerWave, minionsToBoss };
@@ -1533,16 +1955,17 @@ function getLevelDifficulty(level) {
   const cfg = getWaveConfig(level);
   const tier = cfg.tier;
   const s = cfg.intensity;
+  const dm = DIFFICULTY_MULT;
   return {
-    hp: Math.floor((60 + tier * 24) * s),
-    shootCooldown: Math.max(260, 1500 - tier * 88 - cfg.cycleIndex * 45),
-    shootCooldownRand: Math.max(160, 1300 - tier * 72 - cfg.cycleIndex * 30),
-    bulletSpeed: 28 + tier * 3.2 + cfg.cycleIndex * 5,
-    damage: Math.floor((ENEMY_DAMAGE + tier * 3.5 + cfg.cycleIndex * 6) * s),
-    spread: Math.max(0.008, 0.04 - tier * 0.0028),
+    hp: Math.floor((60 + tier * 28) * s * dm),
+    shootCooldown: Math.max(180, (1500 - tier * 100 - cfg.cycleIndex * 60) / dm),
+    shootCooldownRand: Math.max(120, (1300 - tier * 82 - cfg.cycleIndex * 40) / dm),
+    bulletSpeed: (28 + tier * 4 + cfg.cycleIndex * 6.5) * (0.85 + dm * 0.12),
+    damage: Math.floor((ENEMY_DAMAGE + tier * 4.5 + cfg.cycleIndex * 8) * s * dm),
+    spread: Math.max(0.006, 0.036 - tier * 0.003),
     spawnCount: cfg.minionsPerWave,
-    scale: Math.min(1 + tier * 0.035, 2),
-    bossHpMult: cfg.isCycleFinale ? 2.2 : 1 + cfg.cycleIndex * 0.15,
+    scale: Math.min(1 + tier * 0.04, 2.15),
+    bossHpMult: (cfg.isCycleFinale ? 2.5 : 1 + cfg.cycleIndex * 0.2) * (0.9 + dm * 0.12),
   };
 }
 
@@ -1762,7 +2185,9 @@ function createEnemy(x, z, level = 1, layer = 0, isBoss = false) {
   const hp = isBoss
     ? Math.floor((diff.hp * 14 + tier * 120 * DIFFICULTY_MULT) * diff.bossHpMult * (BOSSES_PER_WAVE > 1 ? 0.72 : 1) * BOSS_POWER_MULT)
     : diff.hp;
-  const speed = isBoss ? BOSS_SPEED * BOSS_POWER_MULT : MINION_SPEED;
+  const speed = isBoss
+    ? BOSS_SPEED * BOSS_POWER_MULT * (0.92 + DIFFICULTY_MULT * 0.08)
+    : MINION_SPEED * (0.88 + DIFFICULTY_MULT * 0.12);
   const scale = isBoss ? Math.min(2.1 + tier * 0.1, 2.8) : diff.scale;
 
   const model = buildSoldierModel(isBoss, tier);
@@ -1819,6 +2244,979 @@ function createBoss(level, index = 0) {
   boss.group.position.y = floorY;
   boss.bodyMat.color.setHSL(BOSS_HUES[index] ?? 0, 0.58, 0.24);
   return boss;
+}
+
+function clearSummons() {
+  for (const s of summons) {
+    if (s.group) scene.remove(s.group);
+    if (s.nameSprite?.material?.map) s.nameSprite.material.map.dispose();
+    if (s.pointLight) s.pointLight.intensity = 0;
+    if (s.rimLight) s.rimLight.intensity = 0;
+  }
+  summons.length = 0;
+}
+
+function flashScreen(color, duration = 280) {
+  const flash = document.getElementById('damage-flash');
+  if (!flash) return;
+  const r = (color >> 16) & 255;
+  const g = (color >> 8) & 255;
+  const b = color & 255;
+  flash.style.background = `radial-gradient(circle at center, rgba(${r},${g},${b},0.52) 0%, transparent 72%)`;
+  flash.classList.add('active');
+  setTimeout(() => {
+    flash.classList.remove('active');
+    flash.style.background = '';
+  }, duration);
+}
+
+function spawnPhoenixRitual(x, baseY, z) {
+  for (let i = 0; i < 128; i++) {
+    const t = i / 128;
+    const angle = t * Math.PI * 11;
+    const rise = t * 8;
+    const r = (1 - t * 0.5) * 4.8;
+    const colors = [0xffffff, 0xffee88, 0xffcc00, 0xff8800, 0xff4400, 0xff1100];
+    spawnParticles(
+      x + Math.cos(angle) * r,
+      baseY + rise,
+      z + Math.sin(angle) * r,
+      colors[i % colors.length],
+      10 + Math.floor(Math.random() * 10)
+    );
+  }
+  for (let ring = 0; ring < 4; ring++) {
+    for (let i = 0; i < 32; i++) {
+      const angle = (i / 32) * Math.PI * 2;
+      spawnParticles(
+        x + Math.cos(angle) * (2.5 + ring * 0.9),
+        baseY + ring * 0.35,
+        z + Math.sin(angle) * (2.5 + ring * 0.9),
+        ring % 2 ? 0xffaa00 : 0xff6600,
+        6
+      );
+    }
+  }
+}
+
+function killSummon(s) {
+  if (!s.alive) return;
+  s.alive = false;
+  const px = s.group?.position?.x ?? camera.position.x;
+  const py = (s.group?.position?.y ?? LAYER_Y[s.layer]) + s.aimHeight * (s.group?.scale?.y ?? 1) * 0.7;
+  const pz = s.group?.position?.z ?? camera.position.z;
+  if (s.group) scene.remove(s.group);
+  if (state.ridingPhoenix === s) {
+    state.ridingPhoenix = null;
+    camera.position.y = LAYER_Y[s.layer] + PLAYER_EYE_OFFSET;
+    showWaveBanner('凤凰陨落 · 你被甩下！', 2000);
+    takeDamage(120);
+  }
+  s.isRidden = false;
+  if (s.riderMesh) s.riderMesh.visible = false;
+  spawnPhoenixRitual(px, py - 1.5, pz);
+  spawnPhoenixBurst(px, py, pz, 36, 5.5);
+  spawnPhoenixBurst(px, py + 2, pz, 24, 4);
+  spawnParticles(px, py, pz, 0xffffff, 30);
+  flashScreen(0xffffff, 80);
+  setTimeout(() => flashScreen(0xff4400, 280), 90);
+  showWaveBanner(`${s.name || SUMMON_BOSS_NAME} 涅槃陨落`, 1800);
+}
+
+function createPhoenixNameSprite(text) {
+  const c = document.createElement('canvas');
+  c.width = 448;
+  c.height = 112;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 448, 0);
+  grad.addColorStop(0, '#ff1100');
+  grad.addColorStop(0.25, '#ff8800');
+  grad.addColorStop(0.5, '#ffffaa');
+  grad.addColorStop(0.75, '#ffcc00');
+  grad.addColorStop(1, '#ff3300');
+
+  ctx.shadowColor = '#ff6600';
+  ctx.shadowBlur = 36;
+  ctx.fillStyle = 'rgba(8,0,0,0.88)';
+  ctx.beginPath();
+  ctx.roundRect(6, 8, 436, 96, 14);
+  ctx.fill();
+  ctx.strokeStyle = '#ffdd44';
+  ctx.lineWidth = 3.5;
+  ctx.stroke();
+
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(224 + side * 198, 56);
+    ctx.lineTo(224 + side * 168, 18);
+    ctx.lineTo(224 + side * 138, 56);
+    ctx.lineTo(224 + side * 158, 72);
+    ctx.closePath();
+    ctx.fillStyle = side > 0 ? '#ff8800' : '#ffcc00';
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+
+  ctx.font = 'bold 46px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(255,60,0,0.65)';
+  ctx.fillText(text, 226, 60);
+  ctx.fillStyle = grad;
+  ctx.fillText(text, 224, 58);
+
+  const tex = new THREE.CanvasTexture(c);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(4.2, 1.05, 1);
+  sprite.position.y = 3.05;
+  return sprite;
+}
+
+function buildPhoenixModel() {
+  const group = new THREE.Group();
+  const phoenixRoot = new THREE.Group();
+  group.add(phoenixRoot);
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0xff5500,
+    emissive: 0xff2200,
+    emissiveIntensity: 0.7,
+    roughness: 0.35,
+    metalness: 0.25,
+  });
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xffdd44,
+    emissive: 0xff9900,
+    emissiveIntensity: 0.85,
+    roughness: 0.25,
+    metalness: 0.3,
+  });
+  const wingMat = new THREE.MeshStandardMaterial({
+    color: 0xff3300,
+    emissive: 0xff1100,
+    emissiveIntensity: 0.65,
+    roughness: 0.4,
+    side: THREE.DoubleSide,
+  });
+  const wingTipMat = new THREE.MeshStandardMaterial({
+    color: 0xffee88,
+    emissive: 0xffaa00,
+    emissiveIntensity: 1.1,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.92,
+    side: THREE.DoubleSide,
+  });
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0xff1100,
+    emissive: 0xff0000,
+    emissiveIntensity: 0.85,
+    roughness: 0.35,
+  });
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xffcc00,
+    emissiveIntensity: 1.4,
+    roughness: 0.1,
+    metalness: 0.5,
+  });
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.4, 14, 12), bodyMat);
+  body.scale.set(0.95, 0.82, 1.45);
+  body.position.set(0, 1.18, 0.02);
+  body.castShadow = true;
+  phoenixRoot.add(body);
+
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), coreMat);
+  core.position.set(0, 1.24, 0.18);
+  phoenixRoot.add(core);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 0.28, 8), bodyMat);
+  neck.position.set(0, 1.38, 0.22);
+  neck.rotation.x = 0.55;
+  phoenixRoot.add(neck);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 12), headMat);
+  head.position.set(0, 1.52, 0.38);
+  head.castShadow = true;
+  phoenixRoot.add(head);
+
+  for (const side of [-1, 1]) {
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.028, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffcc })
+    );
+    eye.position.set(side * 0.07, 1.54, 0.5);
+    phoenixRoot.add(eye);
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.014, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xff4400 })
+    );
+    pupil.position.set(side * 0.07, 1.54, 0.52);
+    phoenixRoot.add(pupil);
+  }
+
+  const crestParts = [];
+  for (let i = 0; i < 5; i++) {
+    const crest = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.28 + i * 0.04, 5), headMat);
+    crest.position.set((i - 2) * 0.05, 1.68 + i * 0.02, 0.3 - i * 0.02);
+    crest.rotation.x = -0.55 - i * 0.08;
+    phoenixRoot.add(crest);
+    crestParts.push(crest);
+  }
+
+  const beak = new THREE.Mesh(
+    new THREE.ConeGeometry(0.045, 0.18, 7),
+    new THREE.MeshStandardMaterial({ color: 0xffcc00, emissive: 0xff7700, emissiveIntensity: 0.7, metalness: 0.4 })
+  );
+  beak.rotation.x = Math.PI / 2;
+  beak.position.set(0, 1.48, 0.58);
+  phoenixRoot.add(beak);
+
+  const gun = new THREE.Group();
+  gun.position.set(0, 1.48, 0.64);
+  phoenixRoot.add(gun);
+
+  function buildWing(side) {
+    const wing = new THREE.Group();
+    wing.position.set(side * 0.24, 1.32, -0.02);
+    const tiers = [];
+    const specs = [
+      { w: 1.18, h: 0.055, d: 0.68, ox: side * -0.58, oy: 0, oz: 0.04, rz: side * 0.38, mat: wingMat },
+      { w: 1.0, h: 0.045, d: 0.58, ox: side * -0.86, oy: -0.06, oz: -0.06, rz: side * 0.58, mat: wingMat },
+      { w: 0.82, h: 0.038, d: 0.48, ox: side * -1.08, oy: -0.12, oz: -0.14, rz: side * 0.72, mat: wingTipMat },
+      { w: 0.62, h: 0.028, d: 0.38, ox: side * -1.28, oy: -0.18, oz: -0.22, rz: side * 0.88, mat: wingTipMat },
+    ];
+    for (const s of specs) {
+      const feather = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, s.d), s.mat);
+      feather.position.set(s.ox, s.oy, s.oz);
+      feather.rotation.z = s.rz;
+      wing.add(feather);
+      tiers.push(feather);
+    }
+    phoenixRoot.add(wing);
+    return { wing, tiers };
+  }
+
+  const leftWing = buildWing(-1);
+  const rightWing = buildWing(1);
+  const leftArm = leftWing.wing;
+  const rightArm = rightWing.wing;
+
+  const flamePlumes = [];
+  const plumeMat = new THREE.MeshBasicMaterial({
+    color: 0xffaa00, transparent: true, opacity: 0.75,
+  });
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 2; i++) {
+      const plume = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.32 + i * 0.1, 6), plumeMat.clone());
+      plume.position.set(side * (1.05 + i * 0.18), 1.18 - i * 0.08, -0.12 - i * 0.1);
+      plume.rotation.z = side * (0.85 + i * 0.15);
+      plume.rotation.x = -0.35;
+      phoenixRoot.add(plume);
+      flamePlumes.push(plume);
+    }
+  }
+
+  const leftLeg = new THREE.Group();
+  leftLeg.position.set(-0.06, 1.0, -0.42);
+  for (let i = 0; i < 4; i++) {
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.07 - i * 0.008, 0.035, 0.62 + i * 0.08), tailMat);
+    tail.position.set((i % 2 ? -1 : 1) * 0.04, 0.02 * i, -0.32 - i * 0.22);
+    tail.rotation.x = -0.2 - i * 0.12;
+    tail.rotation.y = (i % 2 ? -1 : 1) * 0.15;
+    leftLeg.add(tail);
+  }
+  phoenixRoot.add(leftLeg);
+
+  const rightLeg = new THREE.Group();
+  rightLeg.position.set(0.06, 1.0, -0.42);
+  for (let i = 0; i < 4; i++) {
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.07 - i * 0.008, 0.035, 0.68 + i * 0.1), tailMat);
+    tail.position.set((i % 2 ? 1 : -1) * 0.04, 0.02 * i, -0.36 - i * 0.24);
+    tail.rotation.x = -0.25 - i * 0.14;
+    tail.rotation.y = (i % 2 ? 1 : -1) * 0.18;
+    rightLeg.add(tail);
+  }
+  phoenixRoot.add(rightLeg);
+
+  const auraRings = [];
+  for (let i = 0; i < 3; i++) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.58 + i * 0.2, 0.032 + i * 0.012, 10, 36),
+      new THREE.MeshBasicMaterial({
+        color: i === 0 ? 0xffee88 : i === 1 ? 0xff8800 : 0xff3300,
+        transparent: true,
+        opacity: 0.48 - i * 0.1,
+      })
+    );
+    if (i === 2) ring.rotation.x = Math.PI / 2.8;
+    else ring.rotation.x = Math.PI / 2;
+    ring.position.y = 0.1 + i * 0.1;
+    phoenixRoot.add(ring);
+    auraRings.push(ring);
+  }
+
+  const pointLight = new THREE.PointLight(0xff9900, 4.5, 22);
+  pointLight.position.set(0, 1.35, 0.25);
+  phoenixRoot.add(pointLight);
+  const rimLight = new THREE.PointLight(0xff2200, 2.4, 14);
+  rimLight.position.set(0, 0.6, -0.4);
+  phoenixRoot.add(rimLight);
+  const coreLight = new THREE.PointLight(0xffeeaa, 2.8, 10);
+  coreLight.position.copy(core.position);
+  phoenixRoot.add(coreLight);
+
+  const haloMesh = new THREE.Mesh(
+    new THREE.TorusGeometry(1.2, 0.045, 10, 56),
+    new THREE.MeshBasicMaterial({ color: 0xffee88, transparent: true, opacity: 0.38 })
+  );
+  haloMesh.rotation.x = Math.PI / 2.15;
+  haloMesh.position.set(0, 1.38, -0.12);
+  phoenixRoot.add(haloMesh);
+
+  const coreGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.26, 12, 12),
+    new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.32 })
+  );
+  coreGlow.position.copy(core.position);
+  phoenixRoot.add(coreGlow);
+
+  const wingSparks = [];
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 5; i++) {
+      const spark = new THREE.Mesh(
+        new THREE.SphereGeometry(0.035 + i * 0.01, 6, 6),
+        new THREE.MeshBasicMaterial({
+          color: i % 2 ? 0xffffff : 0xff8800,
+          transparent: true,
+          opacity: 0.85 - i * 0.08,
+        })
+      );
+      spark.position.set(side * (0.85 + i * 0.24), 1.28 - i * 0.04, -0.08 - i * 0.1);
+      phoenixRoot.add(spark);
+      wingSparks.push({ mesh: spark, side, index: i });
+    }
+  }
+
+  const jetFlames = [];
+  for (let i = 0; i < 4; i++) {
+    const jet = new THREE.Mesh(
+      new THREE.ConeGeometry(0.09 - i * 0.012, 0.38 + i * 0.1, 7),
+      new THREE.MeshBasicMaterial({ color: i < 2 ? 0xffaa00 : 0xff4400, transparent: true, opacity: 0.72 })
+    );
+    jet.rotation.x = Math.PI;
+    jet.position.set((i - 1.5) * 0.11, 0.9, -0.2 - i * 0.04);
+    phoenixRoot.add(jet);
+    jetFlames.push(jet);
+  }
+
+  for (const side of [-1, 1]) {
+    const talon = new THREE.Group();
+    talon.position.set(side * 0.14, 0.9, 0.18);
+    for (let t = 0; t < 3; t++) {
+      const claw = new THREE.Mesh(
+        new THREE.ConeGeometry(0.022, 0.14, 4),
+        new THREE.MeshStandardMaterial({ color: 0xffdd66, emissive: 0xff9900, emissiveIntensity: 0.75, metalness: 0.55 })
+      );
+      claw.rotation.x = 0.75;
+      claw.rotation.y = (t - 1) * 0.38;
+      claw.position.set((t - 1) * 0.045, -0.05, t * 0.025);
+      talon.add(claw);
+    }
+    phoenixRoot.add(talon);
+  }
+
+  const solarDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(1.45, 36),
+    new THREE.MeshBasicMaterial({ color: 0xffee66, transparent: true, opacity: 0.26, side: THREE.DoubleSide })
+  );
+  solarDisc.position.set(0, 1.38, -0.62);
+  phoenixRoot.add(solarDisc);
+
+  const solarCore = new THREE.Mesh(
+    new THREE.CircleGeometry(0.62, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.42, side: THREE.DoubleSide })
+  );
+  solarCore.position.set(0, 1.38, -0.61);
+  phoenixRoot.add(solarCore);
+
+  const orbitEmbers = [];
+  for (let i = 0; i < 10; i++) {
+    const ember = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055 + (i % 3) * 0.018, 6, 6),
+      new THREE.MeshBasicMaterial({
+        color: i % 3 === 0 ? 0xffffff : i % 3 === 1 ? 0xffcc00 : 0xff5500,
+        transparent: true,
+        opacity: 0.92,
+      })
+    );
+    phoenixRoot.add(ember);
+    orbitEmbers.push({
+      mesh: ember,
+      angle: (i / 10) * Math.PI * 2,
+      radius: 1.15 + (i % 2) * 0.35,
+      speed: 0.9 + i * 0.12,
+      yOff: 0.75 + (i % 4) * 0.28,
+    });
+  }
+
+  const shockwave = new THREE.Mesh(
+    new THREE.RingGeometry(0.4, 0.72, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.55, side: THREE.DoubleSide })
+  );
+  shockwave.rotation.x = -Math.PI / 2;
+  shockwave.position.y = 0.08;
+  phoenixRoot.add(shockwave);
+
+  const barW = 2.2;
+  const barH = 0.16;
+  const barY = 2.15;
+  const barBg = new THREE.Mesh(
+    new THREE.PlaneGeometry(barW, barH),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6 })
+  );
+  barBg.position.y = barY;
+  group.add(barBg);
+
+  const barFill = new THREE.Mesh(
+    new THREE.PlaneGeometry(barW - 0.08, barH - 0.03),
+    new THREE.MeshBasicMaterial({ color: 0xff8800 })
+  );
+  barFill.position.set(0, barY, 0.01);
+  group.add(barFill);
+
+  return {
+    group, phoenixRoot, body, head, core, coreMat, coreGlow, haloMesh, crestParts, solarDisc, solarCore, shockwave,
+    leftLeg, rightLeg, leftArm, rightArm, leftWingTiers: leftWing.tiers, rightWingTiers: rightWing.tiers,
+    gun, barFill, bodyMat, headMat, auraRings, pointLight, rimLight, coreLight, flamePlumes, wingSparks, jetFlames, orbitEmbers,
+    aimHeight: 1.5, baseHeadZ: 0.38,
+  };
+}
+
+function spawnPhoenixBurst(x, y, z, count = 10, spread = 2.5) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const r = Math.random() * spread;
+    const colors = [0xffcc00, 0xff6600, 0xff3300, 0xffee88];
+    spawnParticles(
+      x + Math.cos(angle) * r,
+      y + Math.random() * 1.2,
+      z + Math.sin(angle) * r,
+      colors[i % colors.length],
+      6 + Math.floor(Math.random() * 6)
+    );
+  }
+}
+
+function spawnSummonedBoss() {
+  const diff = getLevelDifficulty(state.wave);
+  const tier = Math.max(0, state.wave - 1);
+  const layer = state.currentLayer;
+  const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  const resolved = resolveMovement(
+    { x: camera.position.x, y: LAYER_Y[layer], z: camera.position.z },
+    forward.x * 7, 0, forward.z * 7,
+    layer
+  );
+  const x = resolved.x;
+  const z = resolved.z;
+  const floorY = LAYER_Y[layer];
+
+  const model = buildPhoenixModel();
+  const {
+    group, phoenixRoot, body, head, core, coreMat, coreGlow, haloMesh, crestParts, solarDisc, solarCore, shockwave,
+    leftLeg, rightLeg, leftArm, rightArm, leftWingTiers, rightWingTiers, gun, barFill,
+    bodyMat, headMat, auraRings, pointLight, rimLight, coreLight, flamePlumes, wingSparks, jetFlames, orbitEmbers,
+    aimHeight, baseHeadZ,
+  } = model;
+
+  group.position.set(x, floorY, z);
+  group.scale.setScalar(SUMMON_BOSS_SCALE);
+
+  const nameSprite = createPhoenixNameSprite(SUMMON_BOSS_NAME);
+  group.add(nameSprite);
+  scene.add(group);
+
+  const hp = Math.floor((diff.hp * 22 + tier * 200) * BOSS_POWER_MULT * 1.8);
+  const summon = {
+    group, phoenixRoot, body, head, core, coreMat, coreGlow, haloMesh, crestParts, solarDisc, solarCore, shockwave, barFill,
+    leftLeg, rightLeg, leftArm, rightArm, leftWingTiers, rightWingTiers, gun,
+    bodyMat, headMat, auraRings, pointLight, rimLight, coreLight, flamePlumes, wingSparks, jetFlames, orbitEmbers, nameSprite,
+    aimHeight, baseHeadZ,
+    name: SUMMON_BOSS_NAME,
+    hp,
+    maxHp: hp,
+    alive: true,
+    layer,
+    isSummon: true,
+    isPhoenix: true,
+    auraPhase: 0,
+    auraTimer: 0,
+    shockPhase: 0,
+    shootTimer: 200,
+    shootCooldown: PHOENIX_FIRE_RATE,
+    manualFireRate: PHOENIX_MANUAL_FIRE_RATE,
+    lastManualShot: 0,
+    speed: BOSS_SPEED * 0.95,
+    damage: PHOENIX_DAMAGE,
+    range: PHOENIX_RANGE,
+    spread: 0.004,
+    walkPhase: 0,
+    gunRecoil: 0,
+    muzzleFlash: 0,
+    prevX: x,
+    prevZ: z,
+    lastHit: 0,
+  };
+
+  summons.push(summon);
+
+  spawnPhoenixRitual(x, floorY, z);
+  flashScreen(0xffaa00, 420);
+  for (let ring = 0; ring < 3; ring++) {
+    for (let i = 0; i < 48; i++) {
+      const angle = (i / 48) * Math.PI * 2 + ring * 0.4;
+      const rise = ring * 1.4 + (i / 48) * 3.8;
+      spawnParticles(
+        x + Math.cos(angle) * (3.8 - rise * 0.28),
+        floorY + rise,
+        z + Math.sin(angle) * (3.8 - rise * 0.28),
+        ring === 0 ? 0xffffff : ring === 1 ? 0xffcc00 : 0xff4400,
+        10 + ring * 2
+      );
+    }
+  }
+  spawnPhoenixBurst(x, floorY + aimHeight, z, 48, 5);
+  spawnParticles(x, floorY + aimHeight + 3, z, 0xffffff, 36);
+
+  return summon;
+}
+
+function getRideablePhoenix() {
+  return summons.find(s => s.alive && s.isPhoenix) ?? null;
+}
+
+function getPhoenixMountDistance(phoenix = getRideablePhoenix()) {
+  if (!phoenix?.group) return Infinity;
+  return Math.hypot(
+    camera.position.x - phoenix.group.position.x,
+    camera.position.z - phoenix.group.position.z
+  );
+}
+
+function ensureRiderVisual(s) {
+  if (!s.phoenixRoot) return;
+  if (!s.riderMesh) {
+    s.riderMesh = new THREE.Group();
+    const glow = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x88ddff, transparent: true, opacity: 0.75 })
+    );
+    glow.position.set(0, 1.38, -0.22);
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 6, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95 })
+    );
+    core.position.set(0, 1.38, -0.22);
+    s.riderMesh.add(glow, core);
+    s.phoenixRoot.add(s.riderMesh);
+  }
+  s.riderMesh.visible = true;
+}
+
+function syncPlayerOnPhoenix(s) {
+  const tx = s.group.position.x;
+  const tz = s.group.position.z;
+  const floorY = LAYER_Y[s.layer];
+  const aimY = getUnitAimY(s, floorY);
+  const scale = s.group.scale.y;
+  const backOff = 0.62 * scale;
+  camera.position.set(
+    tx - Math.sin(yaw) * backOff,
+    aimY + PHOENIX_RIDE_CAM_HEIGHT * scale,
+    tz - Math.cos(yaw) * backOff
+  );
+  state.currentLayer = s.layer;
+  state.standLayer = s.layer;
+  state.grounded = true;
+  state.verticalVelocity = 0;
+}
+
+function moveRiddenPhoenix(s, dt) {
+  if (!state.mouseLocked) return false;
+
+  const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+  let moveSpeed = s.speed * PHOENIX_RIDE_SPEED_MULT;
+  if (sprint) moveSpeed *= 1.7;
+  if (state.boostActive) moveSpeed *= 2.1;
+
+  _v3a.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+  _v3b.set(Math.cos(yaw), 0, -Math.sin(yaw));
+  let mx = 0;
+  let mz = 0;
+  if (keys['KeyW'] || keys['ArrowUp']) { mx += _v3a.x; mz += _v3a.z; }
+  if (keys['KeyS'] || keys['ArrowDown']) { mx -= _v3a.x; mz -= _v3a.z; }
+  if (keys['KeyA'] || keys['ArrowLeft']) { mx -= _v3b.x; mz -= _v3b.z; }
+  if (keys['KeyD'] || keys['ArrowRight']) { mx += _v3b.x; mz += _v3b.z; }
+
+  const len = Math.hypot(mx, mz);
+  if (len < 0.001) return false;
+
+  const tx = s.group.position.x;
+  const tz = s.group.position.z;
+  const targetX = tx + (mx / len) * 40;
+  const targetZ = tz + (mz / len) * 40;
+  return moveTeammateToward(s, targetX, targetZ, moveSpeed, dt);
+}
+
+function phoenixCombat(s, aimY, tx, tz, dt) {
+  const target = findNearestEnemyForAlly(s, s.range, { skipLoS: true });
+  if (!target) return false;
+
+  if (!s.isRidden) s.group.lookAt(target.x, target.y, target.z);
+  s.shootTimer -= dt;
+  if (s.shootTimer > 0 || target.dist >= s.range) return false;
+
+  s.shootTimer = s.shootCooldown + Math.random() * 120;
+  const dir = new THREE.Vector3(
+    target.x - tx,
+    target.y - aimY,
+    target.z - tz
+  ).normalize();
+  const muzzleX = tx + dir.x * 1.8;
+  const muzzleY = aimY + dir.y * 0.2 + 0.35;
+  const muzzleZ = tz + dir.z * 1.8;
+  phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, s.spread ?? 0.004);
+  return true;
+}
+
+function mountPhoenix(s) {
+  state.ridingPhoenix = s;
+  s.isRidden = true;
+  ensureRiderVisual(s);
+  if (state.stealthActive) {
+    state.stealthActive = false;
+    state.stealthTimer = 0;
+    state.stealthCooldown = WEAPONS.stealth.cooldown;
+    setStealthVisual(false);
+  }
+  if (state.flightActive) {
+    state.flightActive = false;
+    state.flightTimer = 0;
+    state.flightCooldown = Math.max(state.flightCooldown, FLIGHT_COOLDOWN * 0.5);
+  }
+  syncPlayerOnPhoenix(s);
+  spawnPhoenixBurst(s.group.position.x, getUnitAimY(s), s.group.position.z, 24, 2.8);
+  flashScreen(0xffcc44, 180);
+  sfxMount();
+  showWaveBanner('骑乘凤凰！WASD 驾驭 · 左键喷火 · F 下马', 2600);
+  updateHUD();
+}
+
+function dismountPhoenix() {
+  const s = state.ridingPhoenix;
+  if (!s) return;
+  s.isRidden = false;
+  if (s.riderMesh) s.riderMesh.visible = false;
+  state.ridingPhoenix = null;
+
+  const tx = s.group.position.x;
+  const tz = s.group.position.z;
+  const layer = s.layer;
+  const rightX = Math.cos(yaw);
+  const rightZ = -Math.sin(yaw);
+  const sideX = tx + rightX * 4;
+  const sideZ = tz + rightZ * 4;
+  const resolved = resolveMovement(
+    { x: tx, y: LAYER_Y[layer] + s.aimHeight, z: tz },
+    sideX - tx, 0, sideZ - tz,
+    layer
+  );
+  camera.position.x = resolved.x;
+  camera.position.z = resolved.z;
+  camera.position.y = LAYER_Y[layer] + PLAYER_EYE_OFFSET;
+  state.currentLayer = layer;
+  state.standLayer = layer;
+  spawnParticles(resolved.x, LAYER_Y[layer] + 0.5, resolved.z, 0xffaa00, 10);
+  sfxDismount();
+  showWaveBanner('已下马', 1000);
+  updateHUD();
+}
+
+function tryTogglePhoenixMount() {
+  if (!state.playing || state.playerDown) return;
+  const now = performance.now();
+  if (now - state.lastMountToggle < PHOENIX_MOUNT_COOLDOWN) return;
+  state.lastMountToggle = now;
+
+  if (state.ridingPhoenix?.alive) {
+    dismountPhoenix();
+    return;
+  }
+
+  const phoenix = getRideablePhoenix();
+  if (!phoenix) {
+    showWaveBanner('先按 3 召唤凤凰', 1400);
+    return;
+  }
+
+  const dist = getPhoenixMountDistance(phoenix);
+  if (dist > PHOENIX_MOUNT_RANGE) {
+    showWaveBanner('靠近凤凰后按 F 骑乘', 1400);
+    return;
+  }
+
+  mountPhoenix(phoenix);
+}
+
+function updateSummons(dt) {
+  const now = performance.now();
+  const px = camera.position.x;
+  const pz = camera.position.z;
+  const playerLayer = state.currentLayer;
+
+  for (let i = summons.length - 1; i >= 0; i--) {
+    const s = summons[i];
+    if (!s.alive || !s.group) {
+      summons.splice(i, 1);
+      continue;
+    }
+
+    if (s.hp < s.maxHp) {
+      s.hp = Math.min(s.maxHp, s.hp + 80 * (dt / 1000));
+    }
+
+    const tx = s.group.position.x;
+    const tz = s.group.position.z;
+    const floorY = LAYER_Y[s.layer];
+    const aimY = getUnitAimY(s, floorY);
+    let moved = false;
+    let stepDist = 0;
+
+    if (s.isRidden) {
+      moved = moveRiddenPhoenix(s, dt);
+      const lookX = s.group.position.x - Math.sin(yaw) * 6;
+      const lookZ = s.group.position.z - Math.cos(yaw) * 6;
+      s.group.lookAt(lookX, aimY, lookZ);
+      phoenixCombat(s, aimY, s.group.position.x, s.group.position.z, dt);
+      syncPlayerOnPhoenix(s);
+      stepDist = Math.hypot(s.group.position.x - s.prevX, s.group.position.z - s.prevZ);
+      s.prevX = s.group.position.x;
+      s.prevZ = s.group.position.z;
+    } else if (s.layer !== playerLayer) {
+      const ramp = getRampTarget(s.layer, playerLayer, tx, tz);
+      const destX = ramp ? ramp.x : px;
+      const destZ = ramp ? ramp.z : pz;
+      moved = moveTeammateToward(s, destX, destZ, s.speed * 1.1, dt);
+      s.group.lookAt(destX, aimY, destZ);
+      phoenixCombat(s, aimY, tx, tz, dt);
+      stepDist = Math.hypot(s.group.position.x - s.prevX, s.group.position.z - s.prevZ);
+      s.prevX = s.group.position.x;
+      s.prevZ = s.group.position.z;
+    } else {
+      const target = findNearestEnemyForAlly(s, s.range);
+
+      if (target) {
+        if (target.dist > 8) {
+          moved = moveTeammateToward(s, target.x, target.z, s.speed, dt);
+        } else if (target.dist < 5) {
+          moved = moveTeammateToward(s, tx + (tx - target.x), tz + (tz - target.z), s.speed * 0.7, dt);
+        }
+        phoenixCombat(s, aimY, tx, tz, dt);
+      } else {
+        const formX = px - Math.sin(yaw) * 5;
+        const formZ = pz - Math.cos(yaw) * 5;
+        if (Math.hypot(formX - tx, formZ - tz) > 3) {
+          moved = moveTeammateToward(s, formX, formZ, s.speed * 0.75, dt);
+        }
+        s.group.lookAt(px, LAYER_Y[playerLayer] + s.aimHeight, pz);
+      }
+
+      stepDist = Math.hypot(s.group.position.x - s.prevX, s.group.position.z - s.prevZ);
+      s.velX = s.group.position.x - s.prevX;
+      s.velZ = s.group.position.z - s.prevZ;
+      s.prevX = s.group.position.x;
+      s.prevZ = s.group.position.z;
+    }
+
+    if (s.isPhoenix) {
+      s.walkPhase += dt * (moved || stepDist > 0.001 ? 0.016 : 0.008);
+      const flap = Math.sin(s.walkPhase) * (moved || stepDist > 0.001 ? 0.82 : 0.48);
+      const shootFlare = s.muzzleFlash > 0 ? (s.muzzleFlash / 120) * 0.65 : 0;
+      s.leftArm.rotation.z = 0.1 + flap + shootFlare;
+      s.rightArm.rotation.z = -0.1 - flap - shootFlare;
+      if (s.leftWingTiers) {
+        s.leftWingTiers[0].rotation.z = -0.38 + flap * 0.25;
+        s.leftWingTiers[1].rotation.z = -0.58 + flap * 0.42;
+        s.leftWingTiers[2].rotation.z = -0.72 + flap * 0.62;
+        if (s.leftWingTiers[3]) s.leftWingTiers[3].rotation.z = -0.88 + flap * 0.78;
+      }
+      if (s.rightWingTiers) {
+        s.rightWingTiers[0].rotation.z = 0.38 - flap * 0.25;
+        s.rightWingTiers[1].rotation.z = 0.58 - flap * 0.42;
+        s.rightWingTiers[2].rotation.z = 0.72 - flap * 0.62;
+        if (s.rightWingTiers[3]) s.rightWingTiers[3].rotation.z = 0.88 - flap * 0.78;
+      }
+      const tailSway = Math.sin(s.walkPhase * 0.65) * 0.28;
+      s.leftLeg.rotation.x = tailSway;
+      s.leftLeg.rotation.y = Math.sin(s.walkPhase * 0.5) * 0.16;
+      s.rightLeg.rotation.x = tailSway + 0.18;
+      s.rightLeg.rotation.y = -Math.sin(s.walkPhase * 0.5 + 0.8) * 0.18;
+
+      const hover = Math.sin(now * 0.0045) * 0.32;
+      if (s.phoenixRoot) {
+        s.phoenixRoot.position.y = hover;
+        const bank = THREE.MathUtils.clamp((s.group.position.x - s.prevX) * 2.2, -0.22, 0.22);
+        const lean = THREE.MathUtils.clamp((s.group.position.z - s.prevZ) * 1.6, -0.16, 0.16);
+        s.phoenixRoot.rotation.z += (bank - s.phoenixRoot.rotation.z) * 0.12;
+        s.phoenixRoot.rotation.x += (lean - s.phoenixRoot.rotation.x) * 0.1;
+      }
+      s.auraPhase += dt * 0.0028;
+      if (s.auraRings) {
+        s.auraRings[0].rotation.z = s.auraPhase;
+        s.auraRings[1].rotation.z = -s.auraPhase * 1.45;
+        if (s.auraRings[2]) {
+          s.auraRings[2].rotation.y = s.auraPhase * 1.2;
+          s.auraRings[2].material.opacity = 0.22 + Math.sin(now * 0.007) * 0.1;
+        }
+        s.auraRings[0].material.opacity = 0.42 + Math.sin(now * 0.005) * 0.14;
+        s.auraRings[1].material.opacity = 0.32 + Math.cos(now * 0.004) * 0.12;
+      }
+      if (s.flamePlumes) {
+        for (let pi = 0; pi < s.flamePlumes.length; pi++) {
+          const plume = s.flamePlumes[pi];
+          plume.rotation.x = -0.35 + Math.sin(s.walkPhase * 1.2 + pi) * 0.18 + shootFlare * 0.3;
+          plume.material.opacity = 0.55 + Math.sin(now * 0.012 + pi) * 0.25 + shootFlare * 0.35;
+          plume.scale.y = 1 + Math.sin(now * 0.01 + pi * 0.7) * 0.25 + shootFlare * 0.5;
+        }
+      }
+      if (s.coreMat) {
+        s.coreMat.emissiveIntensity = 1.5 + Math.sin(now * 0.009) * 0.65 + shootFlare * 1.3;
+      }
+      if (s.coreGlow) {
+        const corePulse = 1 + Math.sin(now * 0.011) * 0.18 + shootFlare * 0.35;
+        s.coreGlow.scale.setScalar(corePulse);
+        s.coreGlow.material.opacity = 0.28 + Math.sin(now * 0.013) * 0.12 + shootFlare * 0.25;
+      }
+      if (s.haloMesh) {
+        s.haloMesh.rotation.z = s.auraPhase * 1.6;
+        s.haloMesh.material.opacity = 0.32 + Math.sin(now * 0.004) * 0.14 + shootFlare * 0.2;
+        s.haloMesh.scale.setScalar(1 + Math.sin(now * 0.005) * 0.06);
+      }
+      if (s.crestParts) {
+        for (let ci = 0; ci < s.crestParts.length; ci++) {
+          s.crestParts[ci].rotation.x = -0.55 - ci * 0.08 + Math.sin(now * 0.008 + ci) * 0.08 + shootFlare * 0.15;
+        }
+      }
+      if (s.wingSparks) {
+        for (const sp of s.wingSparks) {
+          const wobble = Math.sin(now * 0.014 + sp.index + sp.side) * 0.12;
+          sp.mesh.position.y = 1.28 - sp.index * 0.04 + wobble;
+          sp.mesh.material.opacity = 0.55 + Math.sin(now * 0.018 + sp.index) * 0.35 + shootFlare * 0.4;
+        }
+      }
+      if (s.jetFlames) {
+        for (let ji = 0; ji < s.jetFlames.length; ji++) {
+          const jet = s.jetFlames[ji];
+          jet.scale.y = 1 + Math.sin(now * 0.016 + ji * 0.9) * 0.35 + (moved ? 0.25 : 0) + shootFlare * 0.6;
+          jet.material.opacity = 0.55 + Math.sin(now * 0.02 + ji) * 0.25;
+        }
+      }
+      if (s.coreLight) {
+        s.coreLight.intensity = 2.4 + Math.sin(now * 0.01) * 1.2 + shootFlare * 2.5;
+      }
+      if (s.pointLight) {
+        s.pointLight.intensity = 3.2 + Math.sin(now * 0.006) * 1.4 + shootFlare * 2.5;
+      }
+      if (s.rimLight) {
+        s.rimLight.intensity = 1.6 + Math.sin(now * 0.008 + 1) * 0.7 + shootFlare * 1.2;
+      }
+      if (s.solarDisc) {
+        s.solarDisc.rotation.z = s.auraPhase * 0.85;
+        s.solarDisc.material.opacity = 0.2 + Math.sin(now * 0.004) * 0.14 + shootFlare * 0.25;
+      }
+      if (s.solarCore) {
+        const coreScale = 1 + Math.sin(now * 0.009) * 0.18 + shootFlare * 0.35;
+        s.solarCore.scale.set(coreScale, coreScale, 1);
+        s.solarCore.material.opacity = 0.35 + Math.sin(now * 0.011) * 0.15 + shootFlare * 0.3;
+      }
+      if (s.orbitEmbers) {
+        for (const em of s.orbitEmbers) {
+          em.angle += dt * 0.0011 * em.speed;
+          em.mesh.position.set(
+            Math.cos(em.angle) * em.radius,
+            em.yOff + hover + Math.sin(em.angle * 2.2) * 0.18,
+            Math.sin(em.angle) * em.radius * 0.65 - 0.25
+          );
+          em.mesh.material.opacity = 0.65 + Math.sin(now * 0.015 + em.angle) * 0.3 + shootFlare * 0.35;
+        }
+      }
+      s.shockPhase = (s.shockPhase + dt * 0.0018) % 1;
+      if (s.shockwave) {
+        const wave = s.shockPhase;
+        s.shockwave.scale.set(0.8 + wave * 2.8, 0.8 + wave * 2.8, 1);
+        s.shockwave.material.opacity = 0.5 * (1 - wave);
+      }
+
+      s.auraTimer -= dt;
+      if (s.auraTimer <= 0) {
+        s.auraTimer = 80 + Math.random() * 80;
+        const ax = s.group.position.x + (Math.random() - 0.5) * 2.5;
+        const az = s.group.position.z + (Math.random() - 0.5) * 2.5;
+        spawnParticles(ax, aimY + hover + Math.random(), az, Math.random() < 0.4 ? 0xffffff : 0xff8800, 5);
+      }
+
+      if (moved || stepDist > 0.001) {
+        if (Math.random() < dt * 0.014) {
+          spawnParticles(tx, floorY + 0.15, tz, 0xff4400, 4);
+          spawnParticles(tx + (Math.random() - 0.5) * 1.2, floorY + 0.4, tz + (Math.random() - 0.5) * 1.2, 0xffcc00, 3);
+          spawnParticles(tx, floorY + 0.8, tz, 0xffffff, 2);
+        }
+      }
+    } else if (moved || stepDist > 0.001) {
+      s.walkPhase += dt * 0.008;
+      const swing = Math.sin(s.walkPhase) * 0.45;
+      s.leftLeg.rotation.x = swing;
+      s.rightLeg.rotation.x = -swing;
+    }
+
+    const hitFlash = now - s.lastHit < 140;
+    if (s.isPhoenix) {
+      s.bodyMat.emissive.setHex(hitFlash ? 0xffffff : 0xff3300);
+      s.bodyMat.emissiveIntensity = hitFlash ? 1.2 : 0.65 + Math.sin(now * 0.007) * 0.2;
+      s.headMat.emissiveIntensity = hitFlash ? 1.1 : 0.75 + Math.sin(now * 0.009) * 0.25;
+    } else {
+      s.bodyMat.emissive.setHex(hitFlash ? 0xffff88 : 0xff4400);
+      s.bodyMat.emissiveIntensity = hitFlash ? 0.95 : 0.45 + Math.sin(now * 0.006) * 0.15;
+    }
+
+    if (s.nameSprite) {
+      s.nameSprite.lookAt(camera.position);
+      s.nameSprite.position.y = 2.65 + Math.sin(now * 0.003) * 0.08;
+    }
+
+    s.gunRecoil *= Math.pow(0.82, dt / 16);
+    if (s.isPhoenix && s.head) {
+      s.head.position.z = (s.baseHeadZ ?? 0.38) + s.gunRecoil * 0.14;
+      if (s.core) s.core.scale.setScalar(1 + s.gunRecoil * 0.18);
+    } else {
+      s.rightArm.rotation.x = -0.55 + s.gunRecoil;
+    }
+    if (s.muzzleFlash > 0) s.muzzleFlash = Math.max(0, s.muzzleFlash - dt);
+
+    s.barFill.lookAt(camera.position);
+    s.barFill.scale.x = Math.max(0.05, s.hp / s.maxHp);
+    s.barFill.material.color.setHex(s.hp / s.maxHp > 0.5 ? 0xff8800 : s.hp / s.maxHp > 0.25 ? 0xffaa00 : 0xff4400);
+
+    if (s.hp <= 0) {
+      killSummon(s);
+      summons.splice(i, 1);
+    }
+  }
 }
 
 function createNameSprite(text, color = '#5dade2') {
@@ -2011,16 +3409,42 @@ function trySpawnBoss(level) {
     createBoss(level, i);
   }
   showWaveBanner(`三大 Boss 来袭：${BOSS_NAMES.join(' · ')}`, 2800);
+  sfxBossSpawn();
   updateHUD();
 }
 
+function formatCooldownSeconds(ms) {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function getUnitAimY(unit, floorY = LAYER_Y[unit.layer]) {
+  const scale = unit.group?.scale?.y ?? 1;
+  return floorY + unit.aimHeight * scale;
+}
+
+function removeBullet(list, index, bullet) {
+  if (bullet.mesh) scene.remove(bullet.mesh);
+  list.splice(index, 1);
+}
+
 function getSightBlockers(layer) {
+  if (sightBlockerCache[layer]) return sightBlockerCache[layer];
   const meshes = [];
   for (const c of colliders) {
     if (c.h < 0.4) continue;
     if (c.layer >= 0 && c.layer !== layer) continue;
     meshes.push(c.mesh);
   }
+  sightBlockerCache[layer] = meshes;
+  return meshes;
+}
+
+function getWallMeshes(layer) {
+  if (wallMeshCache[layer]) return wallMeshCache[layer];
+  const meshes = colliders
+    .filter(c => c.layer < 0 || c.layer === layer)
+    .map(c => c.mesh);
+  wallMeshCache[layer] = meshes;
   return meshes;
 }
 
@@ -2052,42 +3476,51 @@ function canEnemySeeTarget(e, ex, aimY, ez, tx, ty, tz, targetLayer) {
   const dist = Math.hypot(dx, dy, dz);
   if (dist < 1.2) return true;
 
-  const dir = new THREE.Vector3(dx / dist, dy / dist, dz / dist);
-  raycaster.set(new THREE.Vector3(ex, aimY, ez), dir);
+  _v3a.set(dx / dist, dy / dist, dz / dist);
+  raycaster.set(_v3b.set(ex, aimY, ez), _v3a);
   raycaster.far = dist - 0.4;
   return raycaster.intersectObjects(getSightBlockers(e.layer), false).length === 0;
 }
 
-function canEnemySeePlayer(e, ex, aimY, ez, px, py, pz, playerLayer) {
-  return canEnemySeeTarget(e, ex, aimY, ez, px, py, pz, playerLayer);
-}
-
 function getEnemyTargets(playerLayer) {
   const targets = [];
-  const px = camera.position.x;
-  const py = camera.position.y;
-  const pz = camera.position.z;
   if (!state.playerDown) {
-    targets.push({ x: px, y: py, z: pz, layer: playerLayer, isPlayer: true });
+    targets.push({
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+      layer: playerLayer,
+      isPlayer: true,
+    });
   }
 
   for (const t of teammates) {
     if (!t.alive || t.layer !== playerLayer) continue;
-    const floorY = LAYER_Y[t.layer];
     targets.push({
       x: t.group.position.x,
-      y: floorY + t.aimHeight * t.group.scale.y,
+      y: getUnitAimY(t),
       z: t.group.position.z,
       layer: t.layer,
       isPlayer: false,
       teammate: t,
     });
   }
+
+  for (const s of summons) {
+    if (!s.alive || s.layer !== playerLayer) continue;
+    targets.push({
+      x: s.group.position.x,
+      y: getUnitAimY(s),
+      z: s.group.position.z,
+      layer: s.layer,
+      isPlayer: false,
+      summon: s,
+    });
+  }
   return targets;
 }
 
-function getNearestTarget(e, ex, ez, playerLayer) {
-  const targets = getEnemyTargets(playerLayer);
+function findNearestTargetFromList(targets, ex, ez) {
   let best = null;
   let bestDist = Infinity;
   for (const target of targets) {
@@ -2100,31 +3533,32 @@ function getNearestTarget(e, ex, ez, playerLayer) {
   return best;
 }
 
-function findNearestEnemyForAlly(t, maxRange) {
+function findNearestEnemyForAlly(t, maxRange, opts = {}) {
   const range = maxRange ?? t.range ?? 42;
+  const skipLoS = !!opts.skipLoS;
   let best = null;
   let bestScore = Infinity;
   const tx = t.group.position.x;
   const tz = t.group.position.z;
-  const floorY = LAYER_Y[t.layer];
-  const aimY = floorY + t.aimHeight;
+  const aimY = getUnitAimY(t);
+  const blockers = skipLoS ? [] : getSightBlockers(t.layer);
 
   for (const e of enemies) {
     if (!e.alive || e.layer !== t.layer) continue;
     const ex = e.group.position.x;
     const ez = e.group.position.z;
-    const ey = floorY + e.aimHeight * e.group.scale.y;
+    const ey = getUnitAimY(e);
     const dist = Math.hypot(ex - tx, ez - tz);
     if (dist > range) continue;
     const dx = ex - tx;
     const dy = ey - aimY;
     const dz = ez - tz;
     const sightDist = Math.hypot(dx, dy, dz);
-    if (sightDist > 1.2) {
-      const dir = new THREE.Vector3(dx / sightDist, dy / sightDist, dz / sightDist);
-      raycaster.set(new THREE.Vector3(tx, aimY, tz), dir);
+    if (!skipLoS && sightDist > 1.2) {
+      _v3a.set(dx / sightDist, dy / sightDist, dz / sightDist);
+      raycaster.set(_v3b.set(tx, aimY, tz), _v3a);
       raycaster.far = sightDist - 0.4;
-      if (raycaster.intersectObjects(getSightBlockers(t.layer), false).length > 0) continue;
+      if (raycaster.intersectObjects(blockers, false).length > 0) continue;
     }
     const score = dist - (e.isBoss ? 20 : 0);
     if (score < bestScore) {
@@ -2133,6 +3567,82 @@ function findNearestEnemyForAlly(t, maxRange) {
     }
   }
   return best;
+}
+
+function phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, spread = 0) {
+  const aimDir = dir.clone();
+  if (spread > 0) {
+    aimDir.x += (Math.random() - 0.5) * spread;
+    aimDir.y += (Math.random() - 0.5) * spread;
+    aimDir.z += (Math.random() - 0.5) * spread;
+    aimDir.normalize();
+  }
+  s.gunRecoil = 1.4;
+  s.muzzleFlash = 120;
+  s.shockPhase = 0;
+  spawnPhoenixBurst(muzzleX, muzzleY, muzzleZ, 24, 2.2);
+  if (s.isRidden) flashScreen(0xffee88, 55);
+  else flashScreen(0xffee88, 80);
+  const bulletSpeed = TEAMMATE_BULLET_SPEED * 1.65;
+  spawnAllyBullet(
+    muzzleX, muzzleY, muzzleZ,
+    aimDir.x * bulletSpeed,
+    aimDir.y * bulletSpeed,
+    aimDir.z * bulletSpeed,
+    s.damage,
+    s
+  );
+}
+
+function applyPhoenixSplash(cx, cy, cz, directEnemy, baseDmg, now, owner) {
+  const radius = PHOENIX_SPLASH_RADIUS;
+  const layer = owner?.layer ?? state.currentLayer;
+  let hitAny = false;
+
+  for (const e of enemies) {
+    if (!e.alive || e.layer !== layer || e === directEnemy) continue;
+    const ex = e.group.position.x;
+    const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
+    const ez = e.group.position.z;
+    const dist = Math.hypot(ex - cx, ey - cy, ez - cz);
+    const hitR = radius + (e.isBoss ? 1.4 : 1);
+    if (dist > hitR) continue;
+    const falloff = 1 - (dist / radius) * 0.45;
+    damageEnemy(e, baseDmg * Math.max(0.45, falloff), now, owner);
+    hitAny = true;
+  }
+
+  for (let i = 0; i < 22; i++) {
+    const angle = (i / 22) * Math.PI * 2;
+    const r = radius * (0.25 + Math.random() * 0.75);
+    spawnParticles(
+      cx + Math.cos(angle) * r,
+      cy + (Math.random() - 0.5) * 0.6,
+      cz + Math.sin(angle) * r,
+      i % 2 ? 0xff5500 : 0xffee00,
+      6
+    );
+  }
+  return hitAny;
+}
+
+function phoenixManualAttack(s) {
+  const now = performance.now();
+  const fireRate = s.manualFireRate ?? PHOENIX_MANUAL_FIRE_RATE;
+  if (now - (s.lastManualShot || 0) < fireRate) return;
+  s.lastManualShot = now;
+
+  const floorY = LAYER_Y[s.layer];
+  const aimY = getUnitAimY(s, floorY);
+  const tx = s.group.position.x;
+  const tz = s.group.position.z;
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const muzzleX = tx + dir.x * 2.8;
+  const muzzleY = aimY + 1.35 + dir.y * 0.5;
+  const muzzleZ = tz + dir.z * 2.8;
+  phoenixLaunchFireball(s, muzzleX, muzzleY, muzzleZ, dir, s.spread ?? 0.004);
+  sfxShootMagma();
 }
 
 function syncTeammateFloor(t) {
@@ -2169,19 +3679,58 @@ function moveTeammateToward(t, targetX, targetZ, speed, dt) {
 }
 
 function spawnAllyBullet(x, y, z, vx, vy, vz, damage, owner = null) {
-  const geo = new THREE.CylinderGeometry(0.02, 0.02, 0.18, 5);
-  geo.rotateX(Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({
-    color: owner?.profile?.role === '支援' ? 0x58d68d : 0x44aaff,
-    transparent: true,
-    opacity: 0.95,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
+  let mesh;
+  if (owner?.isPhoenix) {
+    mesh = new THREE.Group();
+    const outer = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff1100, transparent: true, opacity: 0.28 })
+    );
+    const mid = new THREE.Mesh(
+      new THREE.SphereGeometry(0.34, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff7700, transparent: true, opacity: 0.78 })
+    );
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 10, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.98 })
+    );
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(0.44, 0.05, 10, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffee44, transparent: true, opacity: 0.8 })
+    );
+    ring.rotation.x = Math.PI / 2;
+    const tail = new THREE.Mesh(
+      new THREE.ConeGeometry(0.24, 0.72, 10),
+      new THREE.MeshBasicMaterial({ color: 0xff5500, transparent: true, opacity: 0.5 })
+    );
+    tail.rotation.x = Math.PI / 2;
+    tail.position.z = 0.48;
+    const tail2 = new THREE.Mesh(
+      new THREE.ConeGeometry(0.14, 0.45, 8),
+      new THREE.MeshBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.4 })
+    );
+    tail2.rotation.x = Math.PI / 2;
+    tail2.position.z = 0.72;
+    mesh.add(outer, mid, core, ring, tail, tail2);
+    mesh.userData.fireballLayers = [outer, mid, core, ring, tail, tail2];
+    const fireLight = new THREE.PointLight(0xff8800, 2.8, 14);
+    mesh.add(fireLight);
+    mesh.userData.fireLight = fireLight;
+  } else {
+    const geo = new THREE.CylinderGeometry(0.02, 0.02, 0.18, 5);
+    geo.rotateX(Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      color: owner?.isSummon ? 0xff8800 : owner?.profile?.role === '支援' ? 0x58d68d : 0x44aaff,
+      transparent: true,
+      opacity: 0.95,
+    });
+    mesh = new THREE.Mesh(geo, mat);
+  }
   mesh.position.set(x, y, z);
   const speed = Math.hypot(vx, vy, vz) || 1;
   mesh.lookAt(x + vx / speed, y + vy / speed, z + vz / speed);
   scene.add(mesh);
-  allyBullets.push({ x, y, z, vx, vy, vz, life: 1800, mesh, damage, owner });
+  allyBullets.push({ x, y, z, vx, vy, vz, life: owner?.isPhoenix ? 2200 : 1800, mesh, damage, owner, isFireball: !!owner?.isPhoenix });
 }
 
 function damageEnemy(e, dmg, now, owner = null) {
@@ -2190,11 +3739,19 @@ function damageEnemy(e, dmg, now, owner = null) {
   const ex = e.group.position.x;
   const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
   const ez = e.group.position.z;
-  spawnParticles(ex, ey, ez, owner?.profile?.role === '支援' ? 0x58d68d : 0x44aaff, 6);
+  spawnParticles(ex, ey, ez, owner?.isPhoenix ? 0xff6600 : owner?.profile?.role === '支援' ? 0x58d68d : 0x44aaff, owner?.isPhoenix ? 12 : 6);
+  if (owner?.isPhoenix) {
+    spawnParticles(ex, ey, ez, 0xffcc00, 8);
+    spawnPhoenixBurst(ex, ey, ez, 8, 1.4);
+  }
   if (e.hp <= 0) killEnemy(e, owner);
 }
 
 function downPlayer() {
+  if (state.ridingPhoenix) {
+    state.ridingPhoenix.isRidden = false;
+    state.ridingPhoenix = null;
+  }
   state.playerDown = true;
   state.playerReviveTimer = SQUAD_REVIVE_TIME;
   state.playerDownX = camera.position.x;
@@ -2486,31 +4043,57 @@ function updateAllyBullets(dt) {
       b.mesh.position.set(b.x, b.y, b.z);
       const spd = Math.hypot(b.vx, b.vy, b.vz) || 1;
       b.mesh.lookAt(b.x + b.vx / spd, b.y + b.vy / spd, b.z + b.vz / spd);
+      if (b.isFireball && Math.random() < 0.92) {
+        spawnParticles(b.x, b.y, b.z, Math.random() < 0.25 ? 0xffffff : Math.random() < 0.5 ? 0xff6600 : 0xffcc00, 5);
+      }
+      if (b.isFireball && b.mesh?.userData?.fireLight) {
+        b.mesh.userData.fireLight.intensity = 2.4 + Math.sin(now * 0.03) * 1.2;
+      }
+      if (b.isFireball && b.mesh?.userData?.fireballLayers) {
+        const pulse = 1 + Math.sin(now * 0.025) * 0.22;
+        b.mesh.userData.fireballLayers[0].scale.setScalar(pulse * 1.2);
+        b.mesh.userData.fireballLayers[1].scale.setScalar(pulse);
+        b.mesh.userData.fireballLayers[2].scale.setScalar(pulse * 0.82);
+        if (b.mesh.userData.fireballLayers[3]) {
+          b.mesh.userData.fireballLayers[3].rotation.z += dt * 0.018;
+        }
+        if (b.mesh.userData.fireballLayers[4]) {
+          b.mesh.userData.fireballLayers[4].scale.y = 1 + Math.sin(now * 0.035) * 0.45;
+        }
+        if (b.mesh.userData.fireballLayers[5]) {
+          b.mesh.userData.fireballLayers[5].scale.y = 0.8 + Math.sin(now * 0.04) * 0.3;
+        }
+        b.mesh.rotation.z += dt * 0.014;
+      }
     }
 
     if (b.life <= 0 || b.y < LAYER_Y[0] - 2) {
-      if (b.mesh) scene.remove(b.mesh);
-      allyBullets.splice(i, 1);
+      removeBullet(allyBullets, i, b);
       continue;
     }
 
     let hit = false;
     for (const e of enemies) {
       if (!e.alive) continue;
+      const bulletLayer = b.owner?.layer ?? state.currentLayer;
+      if (e.layer !== bulletLayer) continue;
       const ex = e.group.position.x;
-      const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
+      const ey = getUnitAimY(e);
       const ez = e.group.position.z;
-      if (Math.hypot(b.x - ex, b.y - ey, b.z - ez) < (e.isBoss ? 1.1 : 0.75)) {
+      const hitRadius = b.isFireball ? (e.isBoss ? 2.2 : 1.85) : (e.isBoss ? 1.1 : 0.75);
+      if (Math.hypot(b.x - ex, b.y - ey, b.z - ez) < hitRadius) {
         damageEnemy(e, b.damage, now, b.owner);
+        if (b.isFireball) {
+          spawnPhoenixBurst(b.x, b.y, b.z, 22, 2.8);
+          applyPhoenixSplash(b.x, b.y, b.z, e, b.damage * 0.55, now, b.owner);
+          flashScreen(0xff6600, 80);
+        }
         hit = true;
         break;
       }
     }
 
-    if (hit) {
-      if (b.mesh) scene.remove(b.mesh);
-      allyBullets.splice(i, 1);
-    }
+    if (hit) removeBullet(allyBullets, i, b);
   }
 }
 
@@ -2569,6 +4152,7 @@ function updateEnemies(dt) {
   const px = camera.position.x, py = camera.position.y, pz = camera.position.z;
   const playerLayer = state.currentLayer;
   const now = performance.now();
+  const enemyTargets = getEnemyTargets(playerLayer);
 
   for (const e of enemies) {
     if (!e.alive) continue;
@@ -2577,8 +4161,8 @@ function updateEnemies(dt) {
 
     const ex = e.group.position.x, ez = e.group.position.z;
     const floorY = LAYER_Y[e.layer];
-    const aimY = floorY + e.aimHeight * e.group.scale.y;
-    const nearest = getNearestTarget(e, ex, ez, playerLayer);
+    const aimY = getUnitAimY(e, floorY);
+    const nearest = findNearestTargetFromList(enemyTargets, ex, ez);
     const tx = nearest ? nearest.x : px;
     const ty = nearest ? nearest.y : py;
     const tz = nearest ? nearest.z : pz;
@@ -2595,7 +4179,7 @@ function updateEnemies(dt) {
       e.leftArm.rotation.x = 0;
       e.gunRecoil *= Math.pow(0.82, dt / 16);
       e.rightArm.rotation.x = -0.55 + e.gunRecoil;
-      e.barFill.lookAt(e.group.position.clone().add(new THREE.Vector3(0, 0, -1)));
+      e.barFill.lookAt(_barLookAt.set(ex, aimY, ez - 1));
       continue;
     }
 
@@ -2640,7 +4224,9 @@ function updateEnemies(dt) {
         ? targetDist > minDist || e.layer !== targetLayer
         : sameLayer && targetDist > minDist;
       if (shouldMove) {
-        const moveSpeed = hunting ? MINION_HUNT_SPEED : e.speed;
+        const moveSpeed = hunting
+          ? MINION_HUNT_SPEED * (0.85 + DIFFICULTY_MULT * 0.1)
+          : e.speed;
         moved = moveEnemyToward(e, targetX, targetZ, moveSpeed, dt);
       }
     }
@@ -2674,7 +4260,7 @@ function updateEnemies(dt) {
     e.headMat.emissiveIntensity = hitFlash ? 0.35 : 0;
 
     e.shootTimer -= dt;
-    const shootRange = e.isBoss ? 42 * BOSS_POWER_MULT : 35;
+    const shootRange = (e.isBoss ? 42 * BOSS_POWER_MULT : 35) * (0.9 + DIFFICULTY_MULT * 0.12);
     const canShoot = e.isBoss ? e.layer === targetLayer : sameLayer;
     if (canShoot && e.shootTimer <= 0 && dist < shootRange) {
       e.shootTimer = e.shootCooldown + Math.random() * e.shootCooldownRand;
@@ -2711,6 +4297,7 @@ function clearEnemies() {
 
 function advanceLevel() {
   const completedWave = state.wave;
+  sfxLevelComplete();
   const earnedEquipment = completedWave % CYCLE_LENGTH === 0 ? grantRandomEquipment() : null;
 
   state.hp = getMaxHp();
@@ -2729,9 +4316,14 @@ function advanceLevel() {
     if (!state.playing) return;
 
     state.wave++;
+    clearSummons();
+    state.summonUsedThisWave = false;
+    state.summonCooldown = 0;
+    if (state.ridingPhoenix) state.ridingPhoenix = null;
     clearEnemies();
     refreshTeammates();
     spawnWave(state.wave);
+    sfxWaveStart();
     const cfg = getWaveConfig(state.wave);
     showWaveBanner(getWaveBannerText(state.wave), cfg.isCycleFinale ? 3200 : 2500);
     updateHUD();
@@ -2745,6 +4337,7 @@ function killEnemy(e, killer = null) {
   const py = e.group.position.y + e.aimHeight * e.group.scale.y * 0.7;
   const pz = e.group.position.z;
   spawnParticles(px, py, pz, e.isBoss ? 0x8e44ad : 0xc0392b, e.isBoss ? 45 : 20);
+  sfxKill(e.isBoss);
   state.kills++;
   if (killer?.alive) killer.kills++;
   state.hp = Math.min(getMaxHp(), state.hp + KILL_HEAL + getEquipmentBonuses().killHeal);
@@ -2813,58 +4406,38 @@ function getPlayerForward() {
 function meleeSlash() {
   const weapon = getCurrentWeapon();
   const now = performance.now();
-  const katanaStats = weapon.id === 'katana' ? getKatanaMeleeStats() : null;
-  const fireRate = katanaStats ? katanaStats.fireRate : weapon.fireRate;
-  const range = katanaStats ? katanaStats.range : weapon.range;
-  const arc = katanaStats ? katanaStats.arc : weapon.arc;
-  const element = katanaStats?.element;
+  const katanaStats = getKatanaMeleeStats();
+  const { fireRate, range, arc, element } = katanaStats;
 
   if (now - state.lastShot < fireRate) return;
 
   state.lastShot = now;
 
+  sfxKatanaSlash();
+
   if (weaponMesh) {
-    const weaponId = state.weaponId;
     const baseRot = weaponMesh.rotation.x;
     const baseZ = weaponMesh.position.z;
-    const baseY = weaponMesh.position.y;
-
-    if (weaponId === 'katana') {
-      weaponMesh.rotation.x = -1.05 - state.katanaTier * 0.04;
-      weaponMesh.position.z += 0.14 + state.katanaTier * 0.01;
-      setTimeout(() => {
-        if (weaponMesh && state.weaponId === 'katana') {
-          weaponMesh.rotation.x = baseRot;
-          weaponMesh.position.z = baseZ;
-        }
-      }, 140);
-    } else if (weaponId === 'hammer') {
-      weaponMesh.rotation.x = 0.75;
-      weaponMesh.position.y -= 0.1;
-      weaponMesh.position.z += 0.08;
-      setTimeout(() => {
-        if (weaponMesh && state.weaponId === 'hammer') {
-          weaponMesh.rotation.x = baseRot;
-          weaponMesh.position.y = baseY;
-          weaponMesh.position.z = baseZ;
-        }
-      }, 220);
-    }
+    weaponMesh.rotation.x = -1.05 - state.katanaTier * 0.04;
+    weaponMesh.position.z += 0.14 + state.katanaTier * 0.01;
+    setTimeout(() => {
+      if (weaponMesh && state.weaponId === 'katana') {
+        weaponMesh.rotation.x = baseRot;
+        weaponMesh.position.z = baseZ;
+      }
+    }, 140);
   }
 
   const forward = getPlayerForward();
   const px = camera.position.x;
   const py = camera.position.y;
   const pz = camera.position.z;
-  const strikeX = px + forward.x * (state.weaponId === 'hammer' ? 1.8 : 2.2 + (state.katanaTier || 0) * 0.15);
-  const strikeY = py - (state.weaponId === 'hammer' ? 0.45 : 0.2);
-  const strikeZ = pz + forward.z * (state.weaponId === 'hammer' ? 1.8 : 2.2 + (state.katanaTier || 0) * 0.15);
+  const reach = 2.2 + state.katanaTier * 0.15;
+  const strikeX = px + forward.x * reach;
+  const strikeY = py - 0.2;
+  const strikeZ = pz + forward.z * reach;
 
-  if (state.weaponId === 'hammer') {
-    spawnParticles(strikeX, strikeY, strikeZ, 0x44aaff, 16);
-    spawnParticles(strikeX, strikeY, strikeZ, 0xffee44, 10);
-    spawnParticles(strikeX, strikeY - 0.1, strikeZ, 0xffffff, 6);
-  } else if (element?.effect) {
+  if (element?.effect) {
     const [c1, c2] = element.particleColors;
     spawnKatanaSlashWave(strikeX, strikeY, strikeZ, element, state.katanaTier);
     spawnParticles(strikeX, strikeY, strikeZ, c1, 12 + state.katanaTier * 2);
@@ -2892,13 +4465,13 @@ function meleeSlash() {
 
     const flatDist = Math.hypot(dx, dz);
     if (flatDist < 0.01) continue;
-    const toEnemy = new THREE.Vector3(dx / flatDist, 0, dz / flatDist);
-    if (forward.dot(toEnemy) < cosArc) continue;
+    _v3a.set(dx / flatDist, 0, dz / flatDist);
+    if (forward.dot(_v3a) < cosArc) continue;
 
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     const hits = raycaster.intersectObjects([e.body, e.head], false);
     const isHead = hits.length > 0 && hits[0].object === e.head;
-    const dmg = getWeaponDamage(weapon, isHead);
+    const dmg = getWeaponDamage(WEAPONS.katana, isHead);
 
     if (element?.effect) {
       applyKatanaHit(e, dmg, element, now, isHead);
@@ -2917,13 +4490,18 @@ function meleeSlash() {
 
 function getAbilitySlotText(id) {
   if (id === 'stealth') {
-    if (state.stealthActive) return `${(state.stealthTimer / 1000).toFixed(1)}s`;
-    if (state.stealthCooldown > 0) return `${(state.stealthCooldown / 1000).toFixed(1)}s`;
+    if (state.stealthActive) return formatCooldownSeconds(state.stealthTimer);
+    if (state.stealthCooldown > 0) return formatCooldownSeconds(state.stealthCooldown);
     return '就绪';
   }
   if (id === 'allyboost') {
-    if (state.allyBoostActive) return `${(state.allyBoostTimer / 1000).toFixed(1)}s`;
-    if (state.allyBoostCooldown > 0) return `${(state.allyBoostCooldown / 1000).toFixed(1)}s`;
+    if (state.allyBoostActive) return formatCooldownSeconds(state.allyBoostTimer);
+    if (state.allyBoostCooldown > 0) return formatCooldownSeconds(state.allyBoostCooldown);
+    return '就绪';
+  }
+  if (id === 'summonboss') {
+    if (summons.some(s => s.alive)) return '战斗中';
+    if (state.summonUsedThisWave) return '本关已用';
     return '就绪';
   }
   return '';
@@ -2931,14 +4509,20 @@ function getAbilitySlotText(id) {
 
 function getAbilityStatusText(weapon) {
   if (weapon.id === 'stealth') {
-    if (state.stealthActive) return `隐形中 ${(state.stealthTimer / 1000).toFixed(1)}s`;
-    if (state.stealthCooldown > 0) return `冷却 ${(state.stealthCooldown / 1000).toFixed(1)}s`;
+    if (state.stealthActive) return `隐形中 ${formatCooldownSeconds(state.stealthTimer)}`;
+    if (state.stealthCooldown > 0) return `冷却 ${formatCooldownSeconds(state.stealthCooldown)}`;
     return '左键激活隐形';
   }
   if (weapon.id === 'allyboost') {
-    if (state.allyBoostActive) return `强化中 ×${ALLY_BOOST_MULT} · ${(state.allyBoostTimer / 1000).toFixed(1)}s`;
-    if (state.allyBoostCooldown > 0) return `冷却 ${(state.allyBoostCooldown / 1000).toFixed(1)}s`;
+    if (state.allyBoostActive) return `强化中 ×${ALLY_BOOST_MULT} · ${formatCooldownSeconds(state.allyBoostTimer)}`;
+    if (state.allyBoostCooldown > 0) return `冷却 ${formatCooldownSeconds(state.allyBoostCooldown)}`;
     return `左键强化队友 ×${ALLY_BOOST_MULT} · 12 秒`;
+  }
+  if (weapon.id === 'summonboss') {
+    const active = summons.find(s => s.alive);
+    if (active) return `${SUMMON_BOSS_NAME} · ${Math.ceil(active.hp)} HP`;
+    if (state.summonUsedThisWave) return '本关已召唤 · 下关可再召';
+    return `左键召唤 ${SUMMON_BOSS_NAME}（每关 1 次）`;
   }
   return '';
 }
@@ -2981,7 +4565,29 @@ function activateAllyBoost() {
     spawnParticles(tx, ty + 0.3, tz, 0x58d68d, 10);
   }
   spawnParticles(camera.position.x, camera.position.y - 0.4, camera.position.z, 0x2ecc71, 14);
+  sfxAllyBoost();
   showWaveBanner(`队友强化！全员 ×${ALLY_BOOST_MULT} 战斗能力 · 12 秒`, 2200);
+  updateHUD();
+}
+
+function activateSummonBoss() {
+  const weapon = WEAPONS.summonboss;
+  const now = performance.now();
+  if (state.summonUsedThisWave) {
+    showWaveBanner('本关已召唤过凤凰', 1400);
+    return;
+  }
+  if (now - state.lastShot < weapon.fireRate) return;
+  if (summons.some(s => s.alive)) {
+    showWaveBanner(`${SUMMON_BOSS_NAME} 已在战斗中`, 1400);
+    return;
+  }
+
+  state.lastShot = now;
+  state.summonUsedThisWave = true;
+  spawnSummonedBoss();
+  sfxSummonPhoenix();
+  showWaveBanner(`🔥 ${SUMMON_BOSS_NAME} 降临！自动攻击 · 按 F 骑乘喷火`, 3200);
   updateHUD();
 }
 
@@ -2995,6 +4601,7 @@ function activateStealth() {
   state.lastShot = now;
   clearEnemyBullets();
   setStealthVisual(true);
+  sfxStealth();
   spawnParticles(camera.position.x, camera.position.y - 0.5, camera.position.z, 0x88ccff, 20);
   updateHUD();
 }
@@ -3002,6 +4609,7 @@ function activateStealth() {
 function useAbility(weapon) {
   if (weapon.id === 'stealth') activateStealth();
   if (weapon.id === 'allyboost') activateAllyBoost();
+  if (weapon.id === 'summonboss') activateSummonBoss();
 }
 
 function updateAbilities(dt) {
@@ -3033,7 +4641,52 @@ function updateAbilities(dt) {
     if (state.allyBoostCooldown === 0) updateHUD();
   }
 
-  if (state.stealthActive || state.allyBoostActive) updateHUD();
+  if (state.summonCooldown > 0) {
+    state.summonCooldown = Math.max(0, state.summonCooldown - dt);
+    if (state.summonCooldown === 0 && !summons.some(s => s.alive)) updateHUD();
+  }
+
+  if (state.stealthActive || state.allyBoostActive || summons.some(s => s.alive)) {
+    const now = performance.now();
+    if (now - (state.lastHudUpdate || 0) > 120) {
+      state.lastHudUpdate = now;
+      updateHUD();
+    }
+  }
+}
+
+function applyMagmaSplash(cx, cy, cz, directEnemy, baseDmg, now) {
+  const radius = WEAPONS.magma.splashRadius ?? MAGMA_SPLASH_RADIUS;
+  const layer = state.currentLayer;
+  let hitAny = false;
+
+  for (const e of enemies) {
+    if (!e.alive || e.layer !== layer || e === directEnemy) continue;
+    const ex = e.group.position.x;
+    const ey = e.group.position.y + e.aimHeight * e.group.scale.y;
+    const ez = e.group.position.z;
+    const dist = Math.hypot(ex - cx, ey - cy, ez - cz);
+    const hitR = radius + (e.isBoss ? 1.1 : 0.75);
+    if (dist > hitR) continue;
+
+    const falloff = 1 - (dist / radius) * 0.5;
+    damageEnemy(e, baseDmg * Math.max(0.4, falloff), now);
+    hitAny = true;
+  }
+
+  for (let i = 0; i < 18; i++) {
+    const angle = (i / 18) * Math.PI * 2;
+    const r = radius * (0.3 + Math.random() * 0.7);
+    spawnParticles(
+      cx + Math.cos(angle) * r,
+      cy + (Math.random() - 0.5) * 0.5,
+      cz + Math.sin(angle) * r,
+      i % 2 ? 0xff5500 : 0xffee00,
+      5
+    );
+  }
+
+  return hitAny;
 }
 
 function shoot() {
@@ -3060,7 +4713,13 @@ function fireGun() {
 
   if (!weapon.infinite) state.ammo--;
   state.lastShot = now;
-  updateHUD();
+  if (weapon.id === 'magma') {
+    if (!state.magmaSfxTime || now - state.magmaSfxTime > 140) {
+      sfxShootMagma();
+      state.magmaSfxTime = now;
+    }
+  }
+  if (!weapon.infinite) updateHUD();
 
   if (muzzleFlash) {
     if (weapon.id === 'magma') muzzleFlash.material.color.setHex(0xff5500);
@@ -3083,12 +4742,11 @@ function fireGun() {
     meshToEnemy.set(e.head, e);
   }
 
-  const wallMeshes = colliders
-    .filter(c => c.layer < 0 || c.layer === state.currentLayer)
-    .map(c => c.mesh);
+  const wallMeshes = getWallMeshes(state.currentLayer);
 
   const hitColor = weapon.id === 'magma' ? 0xff5500 : 0xff4444;
   const wallColor = weapon.id === 'magma' ? 0xff8800 : 0xffcc66;
+  const gunRange = weapon.range ?? ARENA_SIZE * 4;
   const spreadMult = isAiming() ? AIM_SPREAD_MULT : 1;
   let hitEnemy = false;
 
@@ -3096,6 +4754,7 @@ function fireGun() {
     const spreadX = (Math.random() - 0.5) * weapon.spread * spreadMult;
     const spreadY = (Math.random() - 0.5) * weapon.spread * spreadMult;
     raycaster.setFromCamera(new THREE.Vector2(spreadX, spreadY), camera);
+    raycaster.far = gunRange;
 
     const hits = raycaster.intersectObjects(enemyMeshes, false);
     if (hits.length > 0) {
@@ -3108,6 +4767,7 @@ function fireGun() {
         spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, hitColor, weapon.id === 'magma' ? 14 : 6);
         if (weapon.id === 'magma') {
           spawnParticles(hits[0].point.x, hits[0].point.y, hits[0].point.z, 0xffee00, 8);
+          applyMagmaSplash(hits[0].point.x, hits[0].point.y, hits[0].point.z, enemy, dmg, now);
         }
         hitEnemy = true;
         if (enemy.hp <= 0) killEnemy(enemy);
@@ -3117,6 +4777,10 @@ function fireGun() {
       if (wallHits.length > 0) {
         const pt = wallHits[0].point;
         spawnParticles(pt.x, pt.y, pt.z, wallColor, weapon.id === 'magma' ? 8 : 4);
+        if (weapon.id === 'magma') {
+          const splashDmg = getWeaponDamage(weapon, false);
+          if (applyMagmaSplash(pt.x, pt.y, pt.z, null, splashDmg, now)) hitEnemy = true;
+        }
       }
     }
   }
@@ -3166,6 +4830,39 @@ function spawnEnemyBullet(x, y, z, vx, vy, vz, damage = ENEMY_DAMAGE) {
   enemyBullets.push({ x, y, z, vx, vy, vz, life: 2000, mesh, damage });
 }
 
+function tryEnemyBulletHitAllies(b, index) {
+  for (const t of teammates) {
+    if (!t.alive) continue;
+    const tdx = b.x - t.group.position.x;
+    const tdy = b.y - getUnitAimY(t);
+    const tdz = b.z - t.group.position.z;
+    if (Math.hypot(tdx, tdy, tdz) < 0.65) {
+      if (!isInSanctuary(t.group.position.x, t.group.position.z, t.layer)) {
+        t.hp -= b.damage;
+        t.lastHit = performance.now();
+        if (t.hp <= 0) killTeammate(t);
+      }
+      removeBullet(enemyBullets, index, b);
+      return true;
+    }
+  }
+
+  for (const s of summons) {
+    if (!s.alive) continue;
+    const sdx = b.x - s.group.position.x;
+    const sdy = b.y - getUnitAimY(s);
+    const sdz = b.z - s.group.position.z;
+    if (Math.hypot(sdx, sdy, sdz) < 1.35) {
+      s.hp -= b.damage;
+      s.lastHit = performance.now();
+      removeBullet(enemyBullets, index, b);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function updateEnemyBullets(dt) {
   for (let i = enemyBullets.length - 1; i >= 0; i--) {
     const b = enemyBullets[i];
@@ -3180,8 +4877,7 @@ function updateEnemyBullets(dt) {
     }
 
     if (b.life <= 0 || b.y < LAYER_Y[0] - 2) {
-      if (b.mesh) scene.remove(b.mesh);
-      enemyBullets.splice(i, 1);
+      removeBullet(enemyBullets, i, b);
       continue;
     }
 
@@ -3190,37 +4886,29 @@ function updateEnemyBullets(dt) {
     const dz = b.z - camera.position.z;
     if (Math.hypot(dx, dy, dz) < 0.6) {
       if (!state.stealthActive && !isPlayerInSanctuary() && !state.playerDown) takeDamage(b.damage);
-      if (b.mesh) scene.remove(b.mesh);
-      enemyBullets.splice(i, 1);
+      removeBullet(enemyBullets, i, b);
       continue;
     }
 
-    let hitAlly = false;
-    for (const t of teammates) {
-      if (!t.alive) continue;
-      const floorY = LAYER_Y[t.layer];
-      const ty = floorY + t.aimHeight;
-      const tdx = b.x - t.group.position.x;
-      const tdy = b.y - ty;
-      const tdz = b.z - t.group.position.z;
-      if (Math.hypot(tdx, tdy, tdz) < 0.65) {
-        if (!isInSanctuary(t.group.position.x, t.group.position.z, t.layer)) {
-          t.hp -= b.damage;
-          t.lastHit = performance.now();
-          if (t.hp <= 0) killTeammate(t);
-        }
-        if (b.mesh) scene.remove(b.mesh);
-        enemyBullets.splice(i, 1);
-        hitAlly = true;
-        break;
-      }
-    }
-    if (hitAlly) continue;
+    if (tryEnemyBulletHitAllies(b, i)) continue;
   }
 }
 
 function takeDamage(amount) {
   if (isPlayerInSanctuary() || state.playerDown) return;
+
+  if (state.ridingPhoenix?.alive) {
+    const phoenix = state.ridingPhoenix;
+    phoenix.hp -= amount;
+    phoenix.lastHit = performance.now();
+    document.getElementById('damage-flash').classList.add('active');
+    setTimeout(() => document.getElementById('damage-flash').classList.remove('active'), 150);
+    sfxTakeDamage();
+    updateHUD();
+    if (phoenix.hp <= 0) killSummon(phoenix);
+    return;
+  }
+
   const reduction = getEquipmentBonuses().damageReduction;
   state.hp -= amount * (1 - reduction);
   state.lastDamageTime = performance.now();
@@ -3233,6 +4921,7 @@ function takeDamage(amount) {
   updateHUD();
   document.getElementById('damage-flash').classList.add('active');
   setTimeout(() => document.getElementById('damage-flash').classList.remove('active'), 150);
+  sfxTakeDamage();
   if (state.hp <= 0) {
     if (hasSquadSurvivors()) downPlayer();
     else endGame(false);
@@ -3339,6 +5028,7 @@ function tryActivateBoost() {
   if (!state.playing || state.boostActive || state.boostCooldown > 0) return;
   state.boostActive = true;
   state.boostTimer = getBoostDuration();
+  sfxBoost();
   updateBoostHUD();
 }
 
@@ -3378,11 +5068,12 @@ function updateBoostHUD() {
 }
 
 function tryActivateFlight() {
-  if (!state.playing || state.flightActive || state.flightCooldown > 0) return;
+  if (!state.playing || state.flightActive || state.flightCooldown > 0 || state.ridingPhoenix) return;
   state.flightActive = true;
   state.flightTimer = FLIGHT_DURATION;
   state.grounded = false;
   state.verticalVelocity = 0;
+  sfxFlight();
   updateFlightHUD();
 }
 
@@ -3430,6 +5121,17 @@ function updatePlayer(dt) {
 
   if (state.playerDown) return;
 
+  if (state.ridingPhoenix) {
+    if (!state.ridingPhoenix.alive) {
+      state.ridingPhoenix = null;
+      camera.position.y = LAYER_Y[state.currentLayer] + PLAYER_EYE_OFFSET;
+    } else {
+      syncPlayerOnPhoenix(state.ridingPhoenix);
+      if (mouse.down) phoenixManualAttack(state.ridingPhoenix);
+      return;
+    }
+  }
+
   const sprint = !state.flightActive && (keys['ShiftLeft'] || keys['ShiftRight']);
   const speedMult = 1 + getEquipmentBonuses().speedMult;
   let moveSpeed = PLAYER_SPEED * speedMult;
@@ -3460,6 +5162,33 @@ function updatePlayer(dt) {
 }
 
 // ─── HUD ──────────────────────────────────────────────────────────
+
+function updateRideHUD() {
+  const el = document.getElementById('ride-hud');
+  if (!el) return;
+  if (!state.playing) {
+    el.classList.add('hidden');
+    el.classList.remove('active', 'nearby');
+    return;
+  }
+  if (state.ridingPhoenix?.alive) {
+    el.classList.remove('hidden', 'nearby');
+    el.classList.add('active');
+    const p = state.ridingPhoenix;
+    el.textContent = `骑乘凤凰 · ${Math.ceil(p.hp)} HP · WASD 驾驭 · 左键喷火 · Shift 加速 · F 下马`;
+    return;
+  }
+  el.classList.remove('active');
+  const phoenix = getRideablePhoenix();
+  if (phoenix && getPhoenixMountDistance(phoenix) <= PHOENIX_MOUNT_RANGE) {
+    el.classList.remove('hidden');
+    el.classList.add('nearby');
+    el.textContent = `凤凰在附近 · 按 F 骑乘（${Math.ceil(phoenix.hp)} HP）`;
+    return;
+  }
+  el.classList.add('hidden');
+  el.classList.remove('nearby');
+}
 
 function updateTeamHUD() {
   const el = document.getElementById('team-hud');
@@ -3497,7 +5226,7 @@ function updateHUD() {
     : weapon.melee
       ? '∞ 近战'
       : weapon.infinite
-        ? '∞'
+        ? '∞ 连射'
         : state.reloading
           ? '换弹中...'
           : `${state.ammo} / ${state.reserve}`;
@@ -3516,13 +5245,17 @@ function updateHUD() {
       : weapon.melee
       ? `${weapon.name} · <kbd>左键</kbd> ${weapon.meleeLabel || '攻击'} · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 换武器`
       : weapon.infinite
-        ? `${weapon.name} · 无限弹药 · 伤害 ${weapon.damage} · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 换枪`
+        ? weapon.id === 'magma'
+          ? `${weapon.name} · 按住左键连射 · 超远射程 · 伤害 ${weapon.damage}`
+          : `${weapon.name} · 无限弹药 · 伤害 ${weapon.damage} · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 换枪`
         : `${weapon.name} · 弹尽自动换弹 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd><kbd>5</kbd> 换枪`;
 
   for (const id of WEAPON_ORDER) {
     const el = document.getElementById(`weapon-slot-${WEAPONS[id].slot}`);
     if (!el) continue;
     el.classList.toggle('active', id === state.weaponId);
+    el.classList.toggle('phoenix-slot', id === 'summonboss');
+    el.classList.toggle('phoenix-battle', id === 'summonboss' && summons.some(s => s.alive));
     el.classList.toggle('katana-tier', id === 'katana' && state.katanaTier > 0);
     for (const tierCls of ['katana-fire', 'katana-frost', 'katana-thunder', 'katana-venom', 'katana-radiance']) {
       el.classList.remove(tierCls);
@@ -3549,9 +5282,11 @@ function updateHUD() {
   updateEquipmentHUD();
   updateTeamHUD();
   updateRegenHUD();
+  updateRideHUD();
 }
 
 function showHitMarker() {
+  sfxHit();
   const ch = document.getElementById('crosshair');
   const hm = document.getElementById('hit-marker');
   ch.classList.add('hit');
@@ -3581,6 +5316,8 @@ function showWaveBanner(message, duration = 2000) {
 // ─── Game Flow ────────────────────────────────────────────────────
 
 function startGame() {
+  ensureAudio();
+  sfxUIClick();
   state.playing = true;
   state.kills = 0;
   state.wave = 1;
@@ -3609,11 +5346,15 @@ function startGame() {
   state.allyBoostActive = false;
   state.allyBoostTimer = 0;
   state.allyBoostCooldown = 0;
+  state.summonCooldown = 0;
+  state.summonUsedThisWave = false;
   state.sanctuaryStay = 0;
   state.playerDown = false;
   state.playerReviveTimer = 0;
   state.katanaTier = 0;
   katanaGlowPhase = 0;
+  state.ridingPhoenix = null;
+  state.lastMountToggle = 0;
   setStealthVisual(false);
   camera.position.set(0, LAYER_Y[0] + PLAYER_EYE_OFFSET, 0);
   yaw = 0; pitch = 0;
@@ -3626,6 +5367,7 @@ function startGame() {
   }
   enemies.length = 0;
   clearTeammates();
+  clearSummons();
   clearAllyBullets();
   for (const b of enemyBullets) {
     if (b.mesh) scene.remove(b.mesh);
@@ -3636,6 +5378,8 @@ function startGame() {
 
   spawnTeammates();
   spawnWave(1);
+  startBGM();
+  sfxWaveStart();
   showWaveBanner(`小队集结：${TEAMMATE_NAMES.join(' · ')} 已就位`, 1800);
   setTimeout(() => {
     if (state.playing) showWaveBanner(getWaveBannerText(1), 2500);
@@ -3654,6 +5398,8 @@ function startGame() {
 
 function endGame(won) {
   state.playing = false;
+  stopBGM();
+  sfxGameOver(won);
   document.exitPointerLock();
 
   const elapsed = Math.floor((performance.now() - state.startTime) / 1000);
@@ -3671,9 +5417,14 @@ function endGame(won) {
 
 document.addEventListener('keydown', e => {
   keys[e.code] = true;
-  if (e.code === 'Space' && state.playing && state.grounded && !state.flightActive) {
+  if (e.code === 'Space' && state.playing && state.grounded && !state.flightActive && !state.ridingPhoenix) {
     state.verticalVelocity = JUMP_VELOCITY;
     state.grounded = false;
+    sfxJump();
+  }
+  if (e.code === 'KeyF' && state.playing && !e.repeat) {
+    tryTogglePhoenixMount();
+    e.preventDefault();
   }
   if (e.code === 'KeyQ' && state.playing) {
     tryActivateFlight();
@@ -3692,12 +5443,13 @@ document.addEventListener('keydown', e => {
     tryActivateBoost();
     e.preventDefault();
   }
-  if (['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyX','KeyQ','KeyE','Digit1','Digit2','Digit3','Digit4','Digit5'].includes(e.code)) e.preventDefault();
+  if (['KeyW','KeyA','KeyS','KeyD','Space','ShiftLeft','ShiftRight','ControlLeft','ControlRight','KeyX','KeyQ','KeyE','KeyF','Digit1','Digit2','Digit3','Digit4','Digit5'].includes(e.code)) e.preventDefault();
 });
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k of Object.keys(keys)) delete keys[k]; mouse.down = false; });
 
 canvas.addEventListener('click', () => {
+  ensureAudio();
   if (state.playing) canvas.requestPointerLock();
 });
 
@@ -3744,6 +5496,7 @@ function animate() {
     updateAim(dt);
     updatePlayer(dt);
     updateTeammates(dt);
+    updateSummons(dt);
     updateEnemies(dt);
     updateAllyBullets(dt);
     updateEnemyBullets(dt);
@@ -3751,6 +5504,7 @@ function animate() {
     updateReload(dt);
     updateKatanaVisuals(dt);
     updateParticles(dt);
+    updateRideHUD();
   }
 
   renderer.render(scene, camera);
